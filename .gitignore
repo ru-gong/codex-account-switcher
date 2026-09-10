@@ -1,0 +1,17 @@
+.build/
+dist/
+evidence/
+.DS_Store
+*.xcresult
+*.profraw
+*.profdata
+__pycache__/
+.env
+.env.*
+*.keychain*
+*.p12
+*.pfx
+*.pem
+*.dmg
+*.sparsebundle/
+*.sparseimage
