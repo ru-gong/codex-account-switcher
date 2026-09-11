@@ -6,9 +6,9 @@ Publish from a clean checkout whose complete reachable Git history has been revi
 2. Run `python3 scripts/privacy_audit.py .`. For a personal-identifier check, provide `--extra-deny-file` pointing to a private JSON list outside the checkout. Never commit that list.
 3. Run the Swift tests and synthetic process acceptance. Record whether real-user acceptance is complete; do not replace it with synthetic test results.
 4. Run `zsh scripts/package.sh`. The packager uses anonymous compiler path mappings, strips debug symbols, includes only reviewed public resources, and scans source and ZIP contents before returning.
-5. Scan the exact assets again with `python3 scripts/privacy_audit.py dist/0.4.0/CodexAccountSwitcher-0.4.0-macOS-arm64.zip`. Inspect repository commit authors, messages, and filenames as well.
+5. Scan the exact assets again with `python3 scripts/privacy_audit.py dist/0.4.1/CodexAccountSwitcher-0.4.1-macOS-arm64.zip`. Inspect repository commit authors, messages, and filenames as well.
 6. Upload only the App ZIP and `SHA256SUMS` to the GitHub Release. GitHub's source downloads come from the clean tagged commit. Never attach the entire working directory, `.git`, build logs, or private validation records.
-7. For this candidate use a pre-release tag such as `v0.4.0-rc.1`. Do not mark the release stable until real-world acceptance is complete. Download the published assets again and compare SHA256.
+7. For this candidate use a pre-release tag such as `v0.4.1-rc.1`. Do not mark the release stable until real-world acceptance is complete. Download the published assets again and compare SHA256.
 
 No Developer account is required for the default ad-hoc, unnotarized distribution. Recipients may need to allow the individual app in macOS Privacy & Security. Never disable Gatekeeper globally or ask for passwords in an issue.
 

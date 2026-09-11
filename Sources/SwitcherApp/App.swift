@@ -12,26 +12,33 @@ import AppKit
     @Published var alias = ""
     @Published var desktopConfirmed = false
     @Published var continuityConfirmed = false
-    @Published var autoQuota = false
+    @Published var autoQuota: Bool {
+        didSet {
+            if !demo { quotaPreferences.automatic = autoQuota }
+            if autoQuota { autoRefresh() }
+        }
+    }
     @Published var authorizationAccount: String?
     private let credentialStore = KeychainStore()
     private var sessionObservers: [NSObjectProtocol] = []
     private var quotaTimer: Timer?
+    private let quotaPreferences = QuotaRefreshPreferences()
+    private var quotaSchedule = QuotaRefreshSchedule()
     let demo: Bool
     let trial: Bool
     let host = HostConfiguration()
     var engine: Engine?
     private var cancellation = Cancellation()
     private let queue = DispatchQueue(label: "local.codex-switcher.worker", qos: .userInitiated)
-    private var lastQuota = Date.distantPast
     var version: String { demo ? "演示环境" : host.version }
     var selected: Account? { ledger.accounts.first { $0.id == selection } }
     var currentAlias: String { ledger.accounts.first { $0.id == current }?.alias ?? "未导入" }
-    var releaseLabel: String { Bundle.main.object(forInfoDictionaryKey: "SwitcherReleaseChannel") as? String == "release" ? "0.4.0" : "0.4.0 候选" }
+    var releaseLabel: String { Bundle.main.object(forInfoDictionaryKey: "SwitcherReleaseChannel") as? String == "release" ? "0.4.1" : "0.4.1 候选" }
 
     init() {
         demo = CommandLine.arguments.contains("--demo")
         trial = CommandLine.arguments.contains("--e1") || CommandLine.arguments.contains("--live-acceptance")
+        autoQuota = demo ? false : quotaPreferences.automatic
         if !demo, let identifier = Bundle.main.bundleIdentifier,
            NSRunningApplication.runningApplications(withBundleIdentifier: identifier).contains(where: { $0.processIdentifier != ProcessInfo.processInfo.processIdentifier }) {
             NSApp.terminate(nil)
@@ -49,10 +56,18 @@ import AppKit
                 let store = credentialStore
                 sessionObservers.append(NSWorkspace.shared.notificationCenter.addObserver(forName: name, object: nil, queue: nil) { _ in store.clearSessionCache() })
             }
+            for name in [NSWorkspace.didWakeNotification, NSWorkspace.sessionDidBecomeActiveNotification] {
+                sessionObservers.append(NSWorkspace.shared.notificationCenter.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                    Task { @MainActor in self?.autoRefresh() }
+                })
+            }
             refresh()
-            quotaTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
+            let timer = Timer(timeInterval: 30, repeats: true) { [weak self] _ in
                 Task { @MainActor in self?.autoRefresh() }
             }
+            quotaTimer = timer
+            RunLoop.main.add(timer, forMode: .common)
+            autoRefresh()
         } catch { message = safe(error) }
     }
     func safe(_ error: Error) -> String { (error as? SwitcherError)?.localizedDescription ?? "操作未完成，请检查路径、权限和交付说明。" }
@@ -66,7 +81,7 @@ import AppKit
             writers = demo ? [] : (try host.writers())
         } catch { message = safe(error) }
     }
-    func perform(_ label: String, successMessage: String? = nil, _ operation: @escaping (Engine, Cancellation) throws -> Void) {
+    func perform(_ label: String, successMessage: String? = nil, completion: ((Error?) -> Void)? = nil, _ operation: @escaping (Engine, Cancellation) throws -> Void) {
         guard !busy, let engine else { return }
         busy = true; message = label; cancellation = Cancellation(); let token = cancellation
         queue.async {
@@ -76,17 +91,23 @@ import AppKit
                 self.busy = false; self.refresh()
                 self.message = error.map { self.safe($0) } ?? successMessage ?? self.ledger.lastEvent
                 if error as? SwitcherError == .keychainAuthorizationRequired { self.authorizationAccount = self.selection ?? self.current }
+                completion?(error)
             }
         }
     }
-    func authorizeSelected() {
-        guard let account = ledger.accounts.first(where: { $0.id == authorizationAccount }) ?? selected else { return }
+    func authorizeSelected(_ id: String? = nil) {
+        guard let key = id ?? authorizationAccount ?? selection,
+              let account = ledger.accounts.first(where: { $0.id == key }) else { return }
         let store = credentialStore
-        perform("为此账号请求一次系统授权…", successMessage: "已授权；现在可重试刚才的操作。") { engine, _ in
-            _ = try store.withUserAuthorization { try engine.credentialForProbe(account.id) }
-            DispatchQueue.main.async {
+        perform("为此账号请求一次系统授权…", successMessage: "已授权", completion: { error in
+            if error == nil {
                 self.authorizationAccount = nil
+                self.refreshQuota(trigger: .authorized(account.id))
+            } else if error as? SwitcherError == .keychainAuthorizationRequired {
+                self.authorizationAccount = account.id
             }
+        }) { engine, _ in
+            _ = try store.withUserAuthorization { try engine.credentialForProbe(account.id) }
         }
     }
     func importCurrent() { perform("读取当前凭据…") { engine, _ in try engine.importCurrent() } }
@@ -102,27 +123,29 @@ import AppKit
             try engine.importAuthorized(credential, expectedKey: existing?.id, expectedGeneration: existing?.generation)
         }
     }
-    func refreshQuota() {
-        guard !busy, Date().timeIntervalSince(lastQuota) > 15 else { return }
-        lastQuota = Date()
+    func refreshQuota(trigger: QuotaRefreshTrigger = .manual) {
+        guard !busy else { return }
         if demo { message = "演示额度已就绪（模拟数据）。"; return }
+        guard let engine else { return }
+        let accounts: [Account]
+        do { accounts = try engine.snapshot().accounts } catch { message = safe(error); return }
+        let due = quotaSchedule.accountsDue(accounts, trigger: trigger, now: Date())
+        guard !due.isEmpty else {
+            if trigger != .automatic { message = accounts.isEmpty ? "请先添加账号" : "请稍后刷新；等待请求间隔或服务重试时间。" }
+            return
+        }
+        quotaSchedule.started(at: Date())
         let host = self.host
-        perform("查询额度…") { engine, token in
+        var report: QuotaRefreshReport?
+        perform("查询额度…", completion: { error in
+            if error == nil, let report {
+                self.message = report.message
+                if trigger == .manual && due.count < accounts.count { self.message += "；其余账号等待重试时间" }
+            }
+        }) { engine, token in
             try host.validateVersion()
-            for account in try engine.snapshot().accounts {
-                if let retry = account.quotaRetryAfter, retry > Date() { continue }
-                if token.isCancelled { throw SwitcherError.cancelled }
-                do {
-                    let credential = try engine.credentialForProbe(account.id)
-                    let quota = try AppServer.quota(binary: host.binary, credential: credential, cancellation: token)
-                    try engine.updateQuota(account.id, fingerprint: credential.fingerprint, quota: quota, error: nil)
-                } catch {
-                    try engine.updateQuota(account.id, fingerprint: account.fingerprint, quota: nil, error: error as? SwitcherError ?? .unknownQuota)
-                    if error as? SwitcherError == .keychainAuthorizationRequired {
-                        DispatchQueue.main.async { self.authorizationAccount = account.id }
-                    }
-                    if token.isCancelled { throw SwitcherError.cancelled }
-                }
+            report = try QuotaRefresh.run(engine: engine, accounts: due, cancellation: token) { credential, token in
+                try AppServer.quota(binary: host.binary, credential: credential, cancellation: token)
             }
         }
     }
@@ -184,12 +207,13 @@ import AppKit
         if let url = Bundle.main.url(forResource: "README", withExtension: "md") { NSWorkspace.shared.open(url) }
         else { message = "请阅读项目目录内 README.md 和 docs/真实验收操作说明.md。" }
     }
-    func autoRefresh() { if autoQuota && Date().timeIntervalSince(lastQuota) >= 900 { refreshQuota() } }
+    func autoRefresh() { if autoQuota && !demo { refreshQuota(trigger: .automatic) } }
 }
 
 struct MainView: View {
     @ObservedObject var model: Model
     @State private var advanced = false
+    @State private var acceptanceTools = false
     @State private var deleteAccount: Account?
     @State private var renameAccount: Account?
     @State private var renameText = ""
@@ -219,7 +243,7 @@ struct MainView: View {
                         }.frame(maxWidth: .infinity).padding(.vertical, 24)
                     }
                     ForEach(model.ledger.accounts) { account in accountRow(account) }
-                    if let id = model.authorizationAccount, let account = model.ledger.accounts.first(where: { $0.id == id }) {
+                    if let id = model.authorizationAccount, let account = model.ledger.accounts.first(where: { $0.id == id }), account.quotaError != SwitcherError.keychainAuthorizationRequired.rawValue {
                         VStack(alignment: .leading, spacing: 8) {
                             Text("\(account.alias) 需要授权").font(.callout.bold())
                             Text("后台已停止读取。只有点击下面的按钮才会出现系统授权窗口。").font(.caption).foregroundStyle(.secondary)
@@ -243,7 +267,7 @@ struct MainView: View {
         }
         .frame(width: 390, height: advanced ? 670 : 510)
         .background(Color(nsColor: .windowBackgroundColor))
-        .onAppear { if !model.busy { model.refresh() } }
+        .onAppear { if !model.busy { model.refresh(); model.autoRefresh() } }
         .alert("删除保存的账号？", isPresented: Binding(get: { deleteAccount != nil }, set: { if !$0 { deleteAccount = nil } })) {
             Button("取消", role: .cancel) { deleteAccount = nil }
             Button("删除", role: .destructive) {
@@ -281,7 +305,7 @@ struct MainView: View {
                 Menu {
                     Button("修改名称…") { renameAccount = account; renameText = account.alias }
                     Button("重新登录") { model.login(existing: account) }
-                    Button("授权此账号") { model.authorizationAccount = account.id; model.selection = account.id; model.authorizeSelected() }
+                    Button("授权此账号") { model.authorizeSelected(account.id) }
                     Divider()
                     Button("删除账号…", role: .destructive) { deleteAccount = account }.disabled(isCurrent || model.ledger.transaction != nil)
                 } label: { Image(systemName: "ellipsis") }
@@ -294,6 +318,23 @@ struct MainView: View {
                 Text(remaining(account)).monospacedDigit()
             }.font(.caption).foregroundStyle(.secondary)
             if let window = account.quota?.primary { ProgressView(value: window.remaining, total: 100).tint(.teal) }
+            let status = QuotaRefresh.status(for: account)
+            if !status.isEmpty {
+                HStack {
+                    Text(status).font(.caption2).foregroundStyle(.orange)
+                    Spacer(minLength: 0)
+                    if account.quotaError == SwitcherError.keychainAuthorizationRequired.rawValue {
+                        Button("授权") { model.authorizeSelected(account.id) }.controlSize(.small).disabled(model.busy)
+                    }
+                }
+            }
+            if let fetched = account.quota?.fetchedAt {
+                HStack(spacing: 3) {
+                    Text("上次更新")
+                    Text(fetched, style: .relative)
+                    Text("前")
+                }.font(.caption2).foregroundStyle(.secondary)
+            }
         }.padding(12)
             .background(isCurrent ? Color.teal.opacity(0.07) : Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 10))
     }
@@ -327,7 +368,7 @@ struct MainView: View {
 
     private var advancedSettings: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Toggle("每 15 分钟刷新额度", isOn: $model.autoQuota)
+            Toggle("自动刷新额度（每 15 分钟）", isOn: $model.autoQuota)
             Text("需要钥匙串授权时停止后台读取，不弹密码。休眠或退出登录时清除本次凭据缓存。").font(.caption).foregroundStyle(.secondary)
             HStack {
                 Button("检查状态") { model.refresh() }.disabled(model.busy)
@@ -339,10 +380,18 @@ struct MainView: View {
                     Toggle("我已核对当前外部账号", isOn: $model.desktopConfirmed)
                     Button("保留当前账号并结束切换") { model.keepExternal() }.disabled(model.busy || !model.desktopConfirmed)
                 }
-            } else if model.current != nil {
-                Toggle("任务、浏览器和 History 均已核验", isOn: $model.continuityConfirmed)
-                Button("保存连续性核验") { model.markContinuity() }.disabled(model.busy || !model.continuityConfirmed)
-                Button("记录连续性不可用") { model.markUnavailable() }.disabled(model.busy)
+            } else if model.trial && model.current != nil {
+                DisclosureGroup("验收工具", isExpanded: $acceptanceTools) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("仅记录本次人工观察，不监测或控制 Computer History。").font(.caption).foregroundStyle(.secondary)
+                        if let account = model.ledger.accounts.first(where: { $0.id == model.current }), account.continuityVerifiedVersion == model.host.version {
+                            Text("当前 Codex 版本已保存人工核验记录").font(.caption)
+                        }
+                        Toggle("我已完成本次连续性检查", isOn: $model.continuityConfirmed)
+                        Button("保存观察结果") { model.markContinuity() }.disabled(model.busy || !model.continuityConfirmed)
+                        Button("记录连续性不可用") { model.markUnavailable() }.disabled(model.busy)
+                    }.padding(.top, 8)
+                }
             }
             if !(model.ledger.pendingSecretDeletes ?? []).isEmpty {
                 Button("重试凭据清理") { model.cleanupSecrets() }.disabled(model.busy)

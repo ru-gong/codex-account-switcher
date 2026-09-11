@@ -4,7 +4,8 @@ import Security
 
 public struct Writer: Identifiable { public var id: Int32; public var name: String }
 public struct HostConfiguration {
-    public static let testedVersion = "26.903.61454 (8378)"
+    public static let testedVersion = "26.903.71938 (8576)"
+    public static let testedVersions: Set<String> = ["26.903.61454 (8378)", testedVersion]
     public var appURL = URL(fileURLWithPath: "/Applications/Codex.app")
     public var home: URL
     public init(home: URL = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".codex")) { self.home = home.standardizedFileURL.resolvingSymlinksInPath() }
@@ -14,7 +15,7 @@ public struct HostConfiguration {
         return "\(version) (\(build))"
     }
     public func validateVersion() throws {
-        guard version == Self.testedVersion, FileManager.default.isExecutableFile(atPath: binary.path) else { throw SwitcherError.unsupportedVersion }
+        guard Self.testedVersions.contains(version), FileManager.default.isExecutableFile(atPath: binary.path) else { throw SwitcherError.unsupportedVersion }
         // Pin the vendor as well as the displayed version before handing the backend any token.
         var code: SecStaticCode?, requirement: SecRequirement?
         let rule = "anchor apple generic and identifier \"com.openai.codex\" and certificate leaf[subject.OU] = \"2DC432GLL2\""

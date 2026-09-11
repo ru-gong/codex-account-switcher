@@ -246,7 +246,7 @@ public final class Engine {
             let accounts: [[String: Any]] = l.accounts.enumerated().map { n, a in
                 ["ordinal": n + 1, "generation": a.generation, "hasQuota": a.quota != nil, "quotaStale": a.quota?.isStale ?? true, "continuityChecked": a.continuityVerifiedVersion != nil]
             }
-            return try canonical(["schema": 1, "appVersion": "0.4.0", "accountCount": accounts.count, "accounts": accounts, "transactionPhase": l.transaction?.phase.rawValue ?? "none"])
+            return try canonical(["schema": 1, "appVersion": "0.4.1", "accountCount": accounts.count, "accounts": accounts, "transactionPhase": l.transaction?.phase.rawValue ?? "none"])
         }
     }
 }

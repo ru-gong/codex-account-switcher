@@ -4,7 +4,8 @@ The release is a **candidate / pre-release**. It is available for evaluation wit
 
 | Check | Status |
 | --- | --- |
-| Swift unit tests | 67 passed in Debug and Release |
+| Swift unit tests | 78 passed in Debug and Release |
+| Automatic quota refresh | Preference persistence, scheduling, partial failures, approval retry, and cancellation covered with synthetic tests |
 | Synthetic subprocess recovery | 6 scenarios per build configuration passed |
 | Crash after startup / credential refresh | Synthetic recovery passed |
 | Keychain no-prompt policy | Mocked tests and a synthetic native Keychain test passed |

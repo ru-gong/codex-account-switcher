@@ -4,7 +4,7 @@ import pathlib
 import subprocess
 import tempfile
 repo = pathlib.Path(__file__).resolve().parent.parent
-out = repo / 'evidence/0.4.0'
+out = repo / 'evidence/0.4.1'
 out.mkdir(parents=True, exist_ok=True)
 source = (repo / 'Sources/SwitcherApp/App.swift').read_text().split('@main struct SwitcherApp:')[0]
 source = source.replace('@preconcurrency import SwitcherCore\n', '')
@@ -14,6 +14,7 @@ entry = r'''
         NSApplication.shared.setActivationPolicy(.prohibited)
         let model = Model()
         precondition(model.demo)
+        model.ledger.accounts = Array(model.ledger.accounts.prefix(2))
         let output = URL(fileURLWithPath: CommandLine.arguments.last!)
         let view = NSHostingView(rootView: MainView(model: model))
         view.frame = NSRect(x: 0, y: 0, width: 390, height: 510)

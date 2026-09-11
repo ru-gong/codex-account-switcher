@@ -4,7 +4,7 @@ English · [简体中文](README.md)
 
 A native macOS menu bar utility for saving multiple Codex accounts, checking usage, and switching accounts after Codex has quit.
 
-**Current version: 0.4.0 candidate.** The GitHub tag `v0.4.0-rc.1` is a pre-release, not a claim of completed real-world acceptance. The application UI is currently in Simplified Chinese.
+**Current version: 0.4.1 candidate.** The GitHub tag `v0.4.1-rc.1` is a pre-release, not a claim of completed real-world acceptance. The application UI is currently in Simplified Chinese.
 
 ![Actual SwiftUI menu rendered with synthetic accounts and usage](docs/images/menu-preview.png)
 
@@ -20,7 +20,7 @@ A native macOS menu bar utility for saving multiple Codex accounts, checking usa
 
 Download these files from [Releases](https://github.com/ru-gong/codex-account-switcher/releases):
 
-- `CodexAccountSwitcher-0.4.0-macOS-arm64.zip`: runnable App and bilingual installation instructions.
+- `CodexAccountSwitcher-0.4.1-macOS-arm64.zip`: runnable App and bilingual installation instructions.
 - `SHA256SUMS`: artifact integrity checksum.
 
 Place both files in the same directory and run `shasum -a 256 -c SHA256SUMS`. Extract the ZIP, move `CodexAccountSwitcher.app` to Applications, and open it. The app lives in the menu bar and has no Dock window.
@@ -35,7 +35,7 @@ Quit the previous switcher before replacing it during an upgrade. The account li
 | --- | --- |
 | OS / architecture | macOS 14+; downloadable build is Apple Silicon / arm64 only |
 | Codex location | `/Applications/Codex.app` |
-| Pinned Codex version | `26.903.61454 (8378)`, bundled backend `0.153.4` |
+| Pinned Codex version | `26.903.61454 (8378)` / `26.903.71938 (8576)`, bundled backend `0.153.4` |
 | Authentication | Default `~/.codex` directory with file credential storage |
 | Unsupported | Other versions, managed authentication, non-default profiles, keyring / auto / ephemeral storage, or overridden authentication gateways |
 
@@ -44,8 +44,8 @@ The switcher checks the Codex version and vendor signature before writing. Usage
 ## Usage
 
 1. Choose **保存当前账号** (Save current account), then use `+` to add another account.
-2. Refresh usage from the top-right button. **更多设置** (More settings) includes an optional 15-minute refresh interval. Stale and unknown results are labeled; equal percentages across different plans do not imply equal absolute allowances.
-3. If permission is needed, choose **授权此账号** (Authorize this account), enter any password only in the macOS system dialog, then retry the operation.
+2. Usage refreshes automatically every 15 minutes by default. Startup, wake, and opening the menu also check for stale results. You can disable automatic refresh in **更多设置** (More settings); the preference survives relaunch. The top-right button refreshes manually. Each account shows its last update and any failure; equal percentages across plans do not imply equal absolute allowances.
+3. If permission is needed, choose **授权此账号** (Authorize this account), enter any password only in the macOS system dialog. Successful approval immediately refreshes that account. Background work never requests approval. An expired login requires signing in again; Keychain approval cannot extend token validity.
 4. Quit Codex and shared-auth CLI / IDE processes normally; closing a window is not sufficient. Choose **切换** (Switch) beside the target account.
 5. After Codex reopens, verify the actual account and workspace, then choose **我已核对账号与工作区** (I have verified the account and workspace).
 
@@ -55,7 +55,7 @@ The switcher checks the Codex version and vendor signature before writing. Usage
 open -a /Applications/CodexAccountSwitcher.app --args --live-acceptance
 ```
 
-Quit an already-running switcher first. This flag permits first-time capability testing; **it does not create isolation** and uses the current macOS user's real Codex account library. Check tasks, authenticated browser sites, and Computer History before saving the continuity observation in More settings.
+Quit an already-running switcher first. This flag permits first-time capability testing; **it does not create isolation** and uses the current macOS user's real Codex account library. Check tasks, authenticated browser sites, and Computer History before saving the continuity observation in More settings → **验收工具** (Acceptance tools). These tools are visible only in acceptance mode and record manual observations; they do not monitor or control Computer History.
 
 ## Data, privacy, and recovery
 
@@ -70,7 +70,7 @@ Removing the App retains the account library by default. Remove saved non-curren
 
 ## Validation and limitations
 
-67 Swift tests passed in both Debug and Release configurations, covering transactions, concurrency, recovery, and noninteractive Keychain behavior. Additional checks cover subprocess crashes, synthetic Keychain items, and packaging requirements.
+78 Swift tests passed in both Debug and Release configurations, covering transactions, concurrency, recovery, and noninteractive Keychain behavior. Additional checks cover subprocess crashes, synthetic Keychain items, and packaging requirements.
 
 These checks do not establish full real-account acceptance. Menu interaction, repeated switching, functional restore, a 48-hour observation, and installation on another Mac are not all complete. Computer History continuity remains unverified; uninterrupted History across every account or version is not promised. See [Acceptance status](docs/ACCEPTANCE.md).
 
@@ -88,7 +88,7 @@ python3 scripts/test_release_gate.py
 zsh scripts/package.sh
 ```
 
-Outputs are written to `dist/0.4.0/`; existing version directories are never overwritten. For synthetic-only demonstration, run `open -n dist/0.4.0/CodexAccountSwitcher.app --args --demo`.
+Outputs are written to `dist/0.4.1/`; existing version directories are never overwritten. For synthetic-only demonstration, run `open -n dist/0.4.1/CodexAccountSwitcher.app --args --demo`.
 
 Packaging remaps build paths, removes debug symbols, and audits artifacts. Follow [Releasing](docs/RELEASING.md) before publishing. Never upload private evidence, account files, backups, or local development history.
 

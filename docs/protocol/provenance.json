@@ -18,6 +18,14 @@
       "vendor_team_id": "2DC432GLL2",
       "omitted_auth_storage": "file",
       "default_source": "https://learn.chatgpt.com/docs/config-schema.json"
+    },
+    {
+      "app_version": "26.903.71938 (8576)",
+      "cli_version": "0.153.4",
+      "verification_date": "2026-09-11",
+      "all_four_schemas_byte_identical": true,
+      "vendor_team_id": "2DC432GLL2",
+      "verification_scope": "Protocol and vendor signature rechecked; full real-account continuity acceptance remains incomplete."
     }
   ]
 }

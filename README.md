@@ -4,7 +4,7 @@
 
 一个原生 macOS 菜单栏工具，用于保存多个 Codex 账号、查看额度，并在退出 Codex 后切换账号。
 
-**当前版本：0.4.0 候选版。** GitHub 中的 `v0.4.0-rc.1` 为预发布，不代表完整实机验收完成。应用界面目前为简体中文。
+**当前版本：0.4.1 候选版。** GitHub 中的 `v0.4.1-rc.1` 为预发布，不代表完整实机验收完成。应用界面目前为简体中文。
 
 ![使用假账号和假额度渲染的菜单栏界面](docs/images/menu-preview.png)
 
@@ -20,7 +20,7 @@
 
 从本仓库 [Releases](https://github.com/ru-gong/codex-account-switcher/releases) 下载：
 
-- `CodexAccountSwitcher-0.4.0-macOS-arm64.zip`：可运行的 App 及中英文安装说明。
+- `CodexAccountSwitcher-0.4.1-macOS-arm64.zip`：可运行的 App 及中英文安装说明。
 - `SHA256SUMS`：文件完整性校验。
 
 把两者下载到同一目录，可执行 `shasum -a 256 -c SHA256SUMS` 校验。解压 ZIP，将 `CodexAccountSwitcher.app` 拖到“应用程序”，然后打开；图标显示在菜单栏，不显示 Dock 窗口。
@@ -35,7 +35,7 @@
 | --- | --- |
 | 系统与架构 | macOS 14+，当前成品仅 Apple Silicon / arm64 |
 | Codex 安装位置 | `/Applications/Codex.app` |
-| 已适配 Codex | `26.903.61454 (8378)`，内置后端 `0.153.4` |
+| 已适配 Codex | `26.903.61454 (8378)` / `26.903.71938 (8576)`，内置后端 `0.153.4` |
 | 认证存储 | 默认 `~/.codex`，file 后端 |
 | 不支持 | 其他版本、受管认证、非默认 profile、keyring / auto / ephemeral 后端或认证网关覆盖 |
 
@@ -44,8 +44,8 @@
 ## 使用
 
 1. 首次打开后点“保存当前账号”，再通过右上角 `+` 添加备用账号。
-2. 右上角刷新按钮查询额度；“更多设置”可开启每 15 分钟刷新。未知或过期结果会保留相应状态，不能把相同百分比视为不同套餐的相同绝对额度。
-3. 需要钥匙串授权时，点击该账号的“授权此账号”，只在 macOS 系统窗口输入密码，然后重试刚才的操作。
+2. 默认每 15 分钟自动刷新额度，启动、唤醒和打开面板时会补查过期结果；“更多设置”可关闭，设置会在重启后保留。右上角按钮可手动刷新，每个账号显示上次更新时间与失败原因。相同百分比不代表不同套餐的相同绝对额度。
+3. 需要钥匙串授权时，点击该账号的“授权此账号”，只在 macOS 系统窗口输入密码，授权成功会立即更新该账号额度。后台不弹授权窗口；若显示“登录已过期”，需重新登录，钥匙串授权不能延长令牌有效期。
 4. 正常退出 Codex 及共享登录的 CLI / IDE。关闭窗口不等于退出。点击目标账号的“切换”。
 5. 自动重开 Codex 后核对实际账号与工作区，再回切换台点“我已核对账号与工作区”。
 
@@ -55,7 +55,7 @@
 open -a /Applications/CodexAccountSwitcher.app --args --live-acceptance
 ```
 
-若程序已运行，先退出再执行。`--live-acceptance` 仅放行首次能力验证，**不创建隔离环境**，会使用当前系统用户的真实 Codex 账号库。核验任务、已登录浏览器站点和 Computer History 后，在“更多设置”保存连续性核验记录。
+若程序已运行，先退出再执行。`--live-acceptance` 仅放行首次能力验证，**不创建隔离环境**，会使用当前系统用户的真实 Codex 账号库。核验任务、已登录浏览器站点和 Computer History 后，在“更多设置 → 验收工具”保存连续性核验记录。验收工具仅在验收模式显示，记录人工观察，不监测或控制 Computer History。
 
 ## 数据、隐私与恢复
 
@@ -70,7 +70,7 @@ open -a /Applications/CodexAccountSwitcher.app --args --live-acceptance
 
 ## 当前验证与限制
 
-67 项 Swift 自动测试已在 Debug、Release 配置通过，覆盖事务、并发、故障恢复和禁止后台授权。另有子进程崩溃、合成 Keychain 条目与打包条件测试。
+78 项 Swift 自动测试已在 Debug、Release 配置通过，覆盖事务、并发、故障恢复和禁止后台授权。另有子进程崩溃、合成 Keychain 条目与打包条件测试。
 
 这些结果不代替真实账户验收。完整菜单操作、反复切换、功能恢复、48 小时观察和另一台 Mac 安装尚未全部完成；Computer History 的持续运行仍待验证。不能承诺每个账号或每个版本的 History 都不中断。[验收状态](docs/ACCEPTANCE.md)
 
@@ -88,7 +88,7 @@ python3 scripts/test_release_gate.py
 zsh scripts/package.sh
 ```
 
-产物位于 `dist/0.4.0/`，同版本目录已存在时拒绝覆盖。`open -n dist/0.4.0/CodexAccountSwitcher.app --args --demo` 使用临时假账号库演示，不连接真实账号。
+产物位于 `dist/0.4.1/`，同版本目录已存在时拒绝覆盖。`open -n dist/0.4.1/CodexAccountSwitcher.app --args --demo` 使用临时假账号库演示，不连接真实账号。
 
 打包会重映射构建路径、去除调试符号并扫描成品。发布前请执行 [发布与隐私检查流程](docs/RELEASING.md)，不要上传自己的 `evidence/`、账号文件、备份或本机开发历史。
 
