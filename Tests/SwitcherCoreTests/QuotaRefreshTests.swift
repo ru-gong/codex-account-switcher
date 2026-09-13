@@ -81,7 +81,73 @@ final class QuotaRefreshTests: XCTestCase {
         account.quotaError = nil
         account.quota?.fetchedAt = now
         XCTAssertEqual(QuotaRefresh.status(for: account, now: now), "")
-        XCTAssertTrue(QuotaRefresh.status(for: account, now: now.addingTimeInterval(900)).contains("过期"))
+        XCTAssertEqual(QuotaRefresh.status(for: account, now: now.addingTimeInterval(900)), "额度数据待更新")
+    }
+
+    func testUnsupportedVersionIsDistinctFromStaleQuotaAndExpiredLogin() throws {
+        var account = try accounts()[0]
+        account.quota?.fetchedAt = now.addingTimeInterval(-86_400)
+        XCTAssertEqual(QuotaRefresh.status(for: account, now: now, environmentError: .unsupportedVersion), "暂停查询 · Codex 版本需适配")
+        XCTAssertEqual(QuotaRefresh.status(for: account, now: now), "额度数据待更新")
+        account.quotaError = SwitcherError.expired.rawValue
+        XCTAssertEqual(QuotaRefresh.status(for: account, now: now), "登录已过期 · 请重新登录")
+    }
+
+    func testCompatibilityFailurePrecedesKeychainAndKeepsAuthAndCachedQuotaUnchanged() throws {
+        final class SpyStore: SecretStore {
+            var reads = 0
+            func get(_ reference: String) throws -> Data { reads += 1; throw SwitcherError.keychainAuthorizationRequired }
+            func put(_ data: Data) throws -> String { throw SwitcherError.keychain }
+            func remove(_ reference: String) throws { throw SwitcherError.keychain }
+        }
+        let store = SpyStore(), original = try SecureIO.read(engine.authURL)
+        let all = try accounts()
+        let probe = try Engine(root: engine.root, authURL: engine.authURL, secrets: store, writersStopped: {}, environmentAllowed: {})
+        XCTAssertThrowsError(try QuotaRefresh.run(engine: probe, accounts: all, cancellation: Cancellation(), validateEnvironment: {
+            throw SwitcherError.unsupportedVersion
+        }) { _, _ in
+            XCTFail("Must not send any credentials to an unsupported backend")
+            return try self.quota()
+        }) { XCTAssertEqual($0 as? SwitcherError, .unsupportedVersion) }
+        XCTAssertEqual(store.reads, 0)
+        XCTAssertEqual(try SecureIO.read(engine.authURL), original)
+        XCTAssertEqual(try accounts().map(\.quota), all.map(\.quota))
+        XCTAssertTrue(try accounts().allSatisfy { $0.quotaError == nil })
+    }
+
+    func testExplicitBackendPermissionIsPreservedEvenWithRemainingQuota() throws {
+        let q = try Quota.parse(["ordinaryUsageAllowed": false, "rateLimitsByLimitId": ["codex": ["normalModelSlug": "synthetic-model", "primary": ["usedPercent": 20, "windowDurationMins": 300]]]])
+        XCTAssertEqual(q.primary?.remaining, 80)
+        XCTAssertEqual(q.ordinaryUsageAllowed, false)
+        var account = try accounts()[0]; account.quota = q
+        XCTAssertEqual(QuotaRefresh.status(for: account), "服务端暂不允许使用包含额度")
+        XCTAssertEqual(try JSONDecoder().decode(Quota.self, from: JSONEncoder().encode(q)).ordinaryUsageAllowed, false)
+    }
+
+    func testMissingOrNullBackendPermissionIsNeverInferredFromPercentages() throws {
+        for used in [0, 100] {
+            var result: [String: Any] = ["rateLimits": ["primary": ["usedPercent": used, "windowDurationMins": 300]]]
+            XCTAssertNil(try Quota.parse(result).ordinaryUsageAllowed)
+            result["ordinaryUsageAllowed"] = NSNull()
+            XCTAssertNil(try Quota.parse(result).ordinaryUsageAllowed)
+            result["ordinaryUsageAllowed"] = true
+            XCTAssertEqual(try Quota.parse(result).ordinaryUsageAllowed, true)
+        }
+    }
+
+    func testNumericOrStringBackendPermissionIsRejected() throws {
+        for value: Any in [0, 1, "true"] {
+            XCTAssertThrowsError(try Quota.parse(["ordinaryUsageAllowed": value, "rateLimits": ["primary": ["usedPercent": 20, "windowDurationMins": 300]]])) {
+                XCTAssertEqual($0 as? SwitcherError, .unknownQuota)
+            }
+        }
+    }
+
+    func testPreUpgradeCachedQuotaDecodesWithoutNewPermissionField() throws {
+        let old = Data(#"{"primary":{"usedPercent":20,"windowDurationMins":300},"fetchedAt":800000000,"stale":false}"#.utf8)
+        let decoded = try JSONDecoder().decode(Quota.self, from: old)
+        XCTAssertEqual(decoded.primary?.remaining, 80)
+        XCTAssertNil(decoded.ordinaryUsageAllowed)
     }
 
     func testMixedBatchReportsEveryOutcomeAndPreservesFailedCacheAndAuthFile() throws {

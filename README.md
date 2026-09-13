@@ -4,7 +4,7 @@
 
 一个原生 macOS 菜单栏工具，用于保存多个 Codex 账号、查看额度，并在退出 Codex 后切换账号。
 
-**当前版本：0.4.1 候选版。** GitHub 中的 `v0.4.1-rc.1` 为预发布，不代表完整实机验收完成。应用界面目前为简体中文。
+**当前版本：0.4.2 候选版。** GitHub 中的 `v0.4.2-rc.1` 为预发布，不代表完整实机验收完成。应用界面目前为简体中文。
 
 ![使用假账号和假额度渲染的菜单栏界面](docs/images/menu-preview.png)
 
@@ -20,7 +20,7 @@
 
 从本仓库 [Releases](https://github.com/ru-gong/codex-account-switcher/releases) 下载：
 
-- `CodexAccountSwitcher-0.4.1-macOS-arm64.zip`：可运行的 App 及中英文安装说明。
+- `CodexAccountSwitcher-0.4.2-macOS-arm64.zip`：可运行的 App 及中英文安装说明。
 - `SHA256SUMS`：文件完整性校验。
 
 把两者下载到同一目录，可执行 `shasum -a 256 -c SHA256SUMS` 校验。解压 ZIP，将 `CodexAccountSwitcher.app` 拖到“应用程序”，然后打开；图标显示在菜单栏，不显示 Dock 窗口。
@@ -35,11 +35,13 @@
 | --- | --- |
 | 系统与架构 | macOS 14+，当前成品仅 Apple Silicon / arm64 |
 | Codex 安装位置 | `/Applications/Codex.app` |
-| 已适配 Codex | `26.903.61454 (8378)` / `26.903.71938 (8576)`，内置后端 `0.153.4` |
+| 已适配 Codex | `26.908.40834 (8881)`（后端 `0.154.0-alpha.6.2`）；保留 `26.903.61454 (8378)` / `26.903.71938 (8576)`（后端 `0.153.4`） |
 | 认证存储 | 默认 `~/.codex`，file 后端 |
 | 不支持 | 其他版本、受管认证、非默认 profile、keyring / auto / ephemeral 后端或认证网关覆盖 |
 
-程序会检查 Codex 版本和供应商签名，不满足条件时停止写入。额度接口依赖固定版本的内部、不稳定协议；后续 Codex 更新可能需要重新适配。
+程序会检查 Codex 版本和供应商签名，不满足条件时停止写入。额度接口依赖固定版本的内部、不稳定协议；后续 Codex 更新可能需要重新适配。遇到未知版本时，面板会明确提示兼容性问题并暂停查询与切换。
+
+“额度数据待更新”只表示缓存超过 15 分钟，不表示额度用完或登录过期。真正的登录失效会单独提示重新登录。新版后端明确返回不允许使用包含额度时，会显示该状态，不根据百分比推断恢复。
 
 ## 使用
 
@@ -70,7 +72,7 @@ open -a /Applications/CodexAccountSwitcher.app --args --live-acceptance
 
 ## 当前验证与限制
 
-78 项 Swift 自动测试已在 Debug、Release 配置通过，覆盖事务、并发、故障恢复和禁止后台授权。另有子进程崩溃、合成 Keychain 条目与打包条件测试。
+84 项 Swift 自动测试已在 Debug、Release 配置通过，覆盖事务、并发、故障恢复和禁止后台授权。另有子进程崩溃、合成 Keychain 条目与打包条件测试。
 
 这些结果不代替真实账户验收。完整菜单操作、反复切换、功能恢复、48 小时观察和另一台 Mac 安装尚未全部完成；Computer History 的持续运行仍待验证。不能承诺每个账号或每个版本的 History 都不中断。[验收状态](docs/ACCEPTANCE.md)
 
@@ -88,7 +90,7 @@ python3 scripts/test_release_gate.py
 zsh scripts/package.sh
 ```
 
-产物位于 `dist/0.4.1/`，同版本目录已存在时拒绝覆盖。`open -n dist/0.4.1/CodexAccountSwitcher.app --args --demo` 使用临时假账号库演示，不连接真实账号。
+产物位于 `dist/0.4.2/`，同版本目录已存在时拒绝覆盖。`open -n dist/0.4.2/CodexAccountSwitcher.app --args --demo` 使用临时假账号库演示，不连接真实账号。
 
 打包会重映射构建路径、去除调试符号并扫描成品。发布前请执行 [发布与隐私检查流程](docs/RELEASING.md)，不要上传自己的 `evidence/`、账号文件、备份或本机开发历史。
 

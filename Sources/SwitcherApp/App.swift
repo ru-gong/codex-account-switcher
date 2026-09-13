@@ -19,11 +19,13 @@ import AppKit
         }
     }
     @Published var authorizationAccount: String?
+    @Published var compatibilityError: SwitcherError?
     private let credentialStore = KeychainStore()
     private var sessionObservers: [NSObjectProtocol] = []
     private var quotaTimer: Timer?
     private let quotaPreferences = QuotaRefreshPreferences()
     private var quotaSchedule = QuotaRefreshSchedule()
+    private var observedHostVersion: String?
     let demo: Bool
     let trial: Bool
     let host = HostConfiguration()
@@ -33,7 +35,11 @@ import AppKit
     var version: String { demo ? "演示环境" : host.version }
     var selected: Account? { ledger.accounts.first { $0.id == selection } }
     var currentAlias: String { ledger.accounts.first { $0.id == current }?.alias ?? "未导入" }
-    var releaseLabel: String { Bundle.main.object(forInfoDictionaryKey: "SwitcherReleaseChannel") as? String == "release" ? "0.4.1" : "0.4.1 候选" }
+    var compatibilityNotice: String? {
+        guard compatibilityError == .unsupportedVersion else { return nil }
+        return "Codex \(host.version) 未通过兼容检查，额度查询与切换已暂停。请更新切换台。"
+    }
+    var releaseLabel: String { Bundle.main.object(forInfoDictionaryKey: "SwitcherReleaseChannel") as? String == "release" ? "0.4.2" : "0.4.2 候选" }
 
     init() {
         demo = CommandLine.arguments.contains("--demo")
@@ -74,12 +80,19 @@ import AppKit
     func refresh() {
         guard let engine else { return }
         do {
+            refreshCompatibility()
             let previousIdentity = current, previousTransaction = ledger.transaction?.id
             ledger = try engine.snapshot(); current = try? engine.mainCredential().identity.key
             if previousIdentity != current || previousTransaction != ledger.transaction?.id { desktopConfirmed = false; continuityConfirmed = false }
             if selection == nil { selection = current ?? ledger.accounts.first?.id }
             writers = demo ? [] : (try host.writers())
         } catch { message = safe(error) }
+    }
+    private func refreshCompatibility() {
+        guard !demo else { return }
+        let version = host.version
+        if observedHostVersion != version { compatibilityError = nil; observedHostVersion = version }
+        if !HostConfiguration.testedVersions.contains(version) { compatibilityError = .unsupportedVersion }
     }
     func perform(_ label: String, successMessage: String? = nil, completion: ((Error?) -> Void)? = nil, _ operation: @escaping (Engine, Cancellation) throws -> Void) {
         guard !busy, let engine else { return }
@@ -91,6 +104,7 @@ import AppKit
                 self.busy = false; self.refresh()
                 self.message = error.map { self.safe($0) } ?? successMessage ?? self.ledger.lastEvent
                 if error as? SwitcherError == .keychainAuthorizationRequired { self.authorizationAccount = self.selection ?? self.current }
+                if error as? SwitcherError == .unsupportedVersion { self.compatibilityError = .unsupportedVersion }
                 completion?(error)
             }
         }
@@ -126,6 +140,11 @@ import AppKit
     func refreshQuota(trigger: QuotaRefreshTrigger = .manual) {
         guard !busy else { return }
         if demo { message = "演示额度已就绪（模拟数据）。"; return }
+        refreshCompatibility()
+        guard HostConfiguration.testedVersions.contains(host.version) else {
+            if trigger != .automatic { message = compatibilityNotice ?? SwitcherError.unsupportedVersion.localizedDescription }
+            return
+        }
         guard let engine else { return }
         let accounts: [Account]
         do { accounts = try engine.snapshot().accounts } catch { message = safe(error); return }
@@ -139,12 +158,12 @@ import AppKit
         var report: QuotaRefreshReport?
         perform("查询额度…", completion: { error in
             if error == nil, let report {
+                self.compatibilityError = nil
                 self.message = report.message
                 if trigger == .manual && due.count < accounts.count { self.message += "；其余账号等待重试时间" }
             }
         }) { engine, token in
-            try host.validateVersion()
-            report = try QuotaRefresh.run(engine: engine, accounts: due, cancellation: token) { credential, token in
+            report = try QuotaRefresh.run(engine: engine, accounts: due, cancellation: token, validateEnvironment: { try host.validateVersion() }) { credential, token in
                 try AppServer.quota(binary: host.binary, credential: credential, cancellation: token)
             }
         }
@@ -234,6 +253,11 @@ struct MainView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
                     if model.demo { Text("演示 · 假账号与假额度").font(.caption).foregroundStyle(.secondary) }
+                    if let notice = model.compatibilityNotice {
+                        Text(notice).font(.callout).foregroundStyle(.orange)
+                            .frame(maxWidth: .infinity, alignment: .leading).padding(12)
+                            .background(.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+                    }
                     if let tx = model.ledger.transaction { pendingCard(tx) }
                     if model.ledger.accounts.isEmpty {
                         VStack(spacing: 12) {
@@ -300,7 +324,7 @@ struct MainView: View {
                 if !isCurrent {
                     Button("切换") { model.selection = account.id; model.switchToSelected() }
                         .buttonStyle(.bordered).controlSize(.small)
-                        .disabled(model.busy || model.ledger.transaction != nil)
+                        .disabled(model.busy || model.ledger.transaction != nil || model.compatibilityNotice != nil)
                 }
                 Menu {
                     Button("修改名称…") { renameAccount = account; renameText = account.alias }
@@ -318,7 +342,7 @@ struct MainView: View {
                 Text(remaining(account)).monospacedDigit()
             }.font(.caption).foregroundStyle(.secondary)
             if let window = account.quota?.primary { ProgressView(value: window.remaining, total: 100).tint(.teal) }
-            let status = QuotaRefresh.status(for: account)
+            let status = QuotaRefresh.status(for: account, environmentError: model.compatibilityError)
             if !status.isEmpty {
                 HStack {
                     Text(status).font(.caption2).foregroundStyle(.orange)

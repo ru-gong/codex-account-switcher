@@ -17,7 +17,7 @@ public enum SwitcherError: String, Error, LocalizedError {
         case .pendingRecovery: return "上一次切换尚未确认，请先确认或恢复。"
         case .writersRunning: return "请先完全退出 Codex、Codex CLI 和使用同一登录的 IDE 扩展。"
         case .unsupportedBackend: return "尚未确认使用 file 凭据后端，或存在受管配置。请按使用说明完成环境核验。"
-        case .unsupportedVersion: return "Codex 版本尚未验证，本次只允许查看。"
+        case .unsupportedVersion: return "Codex 版本或官方签名未通过兼容检查，已暂停额度查询与切换。请更新切换台。"
         case .capabilityUnknown: return "目标账号的浏览器和 Computer History 连续性尚未人工核验。"
         case .keychainAuthorizationRequired: return "凭据需要授权。请在账号菜单中点“授权此账号”，后台不会弹出密码窗口。"
         case .keychain: return "钥匙串操作失败或被拒绝；不会回退到明文存储。"
@@ -101,6 +101,8 @@ public struct Quota: Codable, Equatable {
     public var secondary: QuotaWindow?
     public var fetchedAt: Date
     public var stale: Bool
+    /// Optional backend permission; percentages must not be used to infer this value.
+    public var ordinaryUsageAllowed: Bool? = nil
     public var isStale: Bool { stale || Date().timeIntervalSince(fetchedAt) > 900 }
     public static func parse(_ result: [String: Any]) throws -> Quota {
         let buckets = result["rateLimitsByLimitId"] as? [String: Any]
@@ -115,9 +117,14 @@ public struct Quota: Codable, Equatable {
                   let mins = Int(exactly: duration.doubleValue), mins > 0 else { throw SwitcherError.unknownQuota }
             return QuotaWindow(usedPercent: used, windowDurationMins: mins, resetsAt: (o["resetsAt"] as? NSNumber).map { Date(timeIntervalSince1970: $0.doubleValue) })
         }
+        let permission: Bool?
+        if let raw = result["ordinaryUsageAllowed"], !(raw is NSNull) {
+            guard let number = raw as? NSNumber, CFGetTypeID(number) == CFBooleanGetTypeID() else { throw SwitcherError.unknownQuota }
+            permission = number.boolValue
+        } else { permission = nil }
         let p = try window(entry["primary"]), s = try window(entry["secondary"])
         guard p != nil || s != nil else { throw SwitcherError.unknownQuota }
-        return Quota(primary: p, secondary: s, fetchedAt: Date(), stale: false)
+        return Quota(primary: p, secondary: s, fetchedAt: Date(), stale: false, ordinaryUsageAllowed: permission)
     }
 }
 

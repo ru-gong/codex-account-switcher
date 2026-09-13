@@ -57,7 +57,10 @@ public struct QuotaRefreshReport {
 public enum QuotaRefresh {
     /// Keep failures local to an account; a successful last account must not hide earlier failures.
     public static func run(engine: Engine, accounts: [Account], cancellation: Cancellation,
+                           validateEnvironment: () throws -> Void = {},
                            fetch: (Credential, Cancellation) throws -> Quota) throws -> QuotaRefreshReport {
+        if cancellation.isCancelled { throw SwitcherError.cancelled }
+        try validateEnvironment()
         var report = QuotaRefreshReport()
         for account in accounts {
             if cancellation.isCancelled { throw SwitcherError.cancelled }
@@ -81,7 +84,8 @@ public enum QuotaRefresh {
         return report
     }
 
-    public static func status(for account: Account, now: Date = Date()) -> String {
+    public static func status(for account: Account, now: Date = Date(), environmentError: SwitcherError? = nil) -> String {
+        if environmentError == .unsupportedVersion { return "暂停查询 · Codex 版本需适配" }
         if let error = account.quotaError {
             switch SwitcherError(rawValue: error) {
             case .keychainAuthorizationRequired: return "待授权 · 点击授权后更新"
@@ -92,6 +96,7 @@ public enum QuotaRefresh {
             }
         }
         guard let quota = account.quota else { return "额度待查询" }
-        return quota.stale || now.timeIntervalSince(quota.fetchedAt) >= 900 ? "额度已过期 · 等待刷新" : ""
+        if quota.stale || now.timeIntervalSince(quota.fetchedAt) >= 900 { return "额度数据待更新" }
+        return quota.ordinaryUsageAllowed == false ? "服务端暂不允许使用包含额度" : ""
     }
 }

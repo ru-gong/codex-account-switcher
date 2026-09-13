@@ -4,7 +4,7 @@ import pathlib
 import subprocess
 import tempfile
 repo = pathlib.Path(__file__).resolve().parent.parent
-out = repo / 'evidence/0.4.1'
+out = repo / 'evidence/0.4.2'
 out.mkdir(parents=True, exist_ok=True)
 source = (repo / 'Sources/SwitcherApp/App.swift').read_text().split('@main struct SwitcherApp:')[0]
 source = source.replace('@preconcurrency import SwitcherCore\n', '')

@@ -1,13 +1,13 @@
 {
   "source": "/Applications/Codex.app/Contents/Resources/codex",
-  "cli_version": "0.153.4",
-  "app_version": "26.901.51231 (8109)",
-  "verification_date": "2026-09-09",
+  "cli_version": "0.154.0-alpha.6.2",
+  "app_version": "26.908.40834 (8881)",
+  "verification_date": "2026-09-14",
   "files": {
-    "LoginAccountParams.json": "48fb9bea54d7e0890052653ac06737efb3200ba2261515b2c4014027f36bea3d",
+    "GetAccountRateLimitsResponse.json": "76bc91758269a89f57cd16c618b91c1fba76aca3e9d2b6186205e6f107d6b28c",
     "LoginAccountResponse.json": "72e6d77f49bc5809c3af50f183e2a0862dd8f7836816d4796ff69bb13eae0e89",
-    "GetAccountRateLimitsResponse.json": "a28d4d0e9181a498c58d4ae3b6b49aaa6ee7a33c0c9f81c1ad0bff223bfbbe3b",
-    "InitializeParams.json": "6f0094be9a65242ec779a40794cbd4fdfa32fca1e45084a16adfb50501d33ea2"
+    "InitializeParams.json": "6f0094be9a65242ec779a40794cbd4fdfa32fca1e45084a16adfb50501d33ea2",
+    "LoginAccountParams.json": "48fb9bea54d7e0890052653ac06737efb3200ba2261515b2c4014027f36bea3d"
   },
   "reverified_versions": [
     {
@@ -26,6 +26,37 @@
       "all_four_schemas_byte_identical": true,
       "vendor_team_id": "2DC432GLL2",
       "verification_scope": "Protocol and vendor signature rechecked; full real-account continuity acceptance remains incomplete."
+    },
+    {
+      "app_version": "26.908.40834 (8881)",
+      "cli_version": "0.154.0-alpha.6.2",
+      "verification_date": "2026-09-14",
+      "all_four_schemas_byte_identical": false,
+      "compatible_changes": [
+        "Optional normalModelSlug in quota entries",
+        "Optional ordinaryUsageAllowed permission; parsed without inferring from percentages"
+      ],
+      "files": {
+        "GetAccountRateLimitsResponse.json": "76bc91758269a89f57cd16c618b91c1fba76aca3e9d2b6186205e6f107d6b28c",
+        "LoginAccountResponse.json": "72e6d77f49bc5809c3af50f183e2a0862dd8f7836816d4796ff69bb13eae0e89",
+        "InitializeParams.json": "6f0094be9a65242ec779a40794cbd4fdfa32fca1e45084a16adfb50501d33ea2",
+        "LoginAccountParams.json": "48fb9bea54d7e0890052653ac06737efb3200ba2261515b2c4014027f36bea3d"
+      },
+      "vendor_team_id": "2DC432GLL2",
+      "omitted_auth_storage": "file",
+      "isolated_account_read": "null",
+      "verification_scope": "Signature, schemas, isolated backend initialization and effective default auth storage; full real-account continuity acceptance remains incomplete."
     }
-  ]
+  ],
+  "initial_baseline": {
+    "cli_version": "0.153.4",
+    "app_version": "26.901.51231 (8109)",
+    "verification_date": "2026-09-09",
+    "files": {
+      "LoginAccountParams.json": "48fb9bea54d7e0890052653ac06737efb3200ba2261515b2c4014027f36bea3d",
+      "LoginAccountResponse.json": "72e6d77f49bc5809c3af50f183e2a0862dd8f7836816d4796ff69bb13eae0e89",
+      "GetAccountRateLimitsResponse.json": "a28d4d0e9181a498c58d4ae3b6b49aaa6ee7a33c0c9f81c1ad0bff223bfbbe3b",
+      "InitializeParams.json": "6f0094be9a65242ec779a40794cbd4fdfa32fca1e45084a16adfb50501d33ea2"
+    }
+  }
 }

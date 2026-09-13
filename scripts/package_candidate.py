@@ -12,7 +12,7 @@ import tempfile
 import zipfile
 from privacy_audit import require_clean
 
-VERSION = '0.4.1'
+VERSION = '0.4.2'
 REQUIRED_CHECKS = {'ui', 'keychain', 'switch_continuity', 'restore', 'soak', 'second_mac'}
 
 def release_preflight(identity, notary_profile, acceptance, source_id, distribution='developer-id'):
@@ -65,7 +65,7 @@ def package(repo, *, release=False, distribution='adhoc', identity=None, notary_
     shutil.copytree(repo / 'docs', resources / 'docs')
     info = {'CFBundleExecutable': 'CodexAccountSwitcher', 'CFBundleIdentifier': 'local.codex-account-switcher',
             'CFBundleName': 'Codex 账号切换台', 'CFBundleDisplayName': 'Codex 账号切换台',
-            'CFBundlePackageType': 'APPL', 'CFBundleShortVersionString': VERSION, 'CFBundleVersion': '401',
+            'CFBundlePackageType': 'APPL', 'CFBundleShortVersionString': VERSION, 'CFBundleVersion': '402',
             'LSMinimumSystemVersion': '14.0', 'LSUIElement': True, 'NSHighResolutionCapable': True,
             'SwitcherReleaseChannel': 'release' if release else 'candidate',
             'NSHumanReadableCopyright': 'Codex Account Switcher, 2026'}
@@ -104,7 +104,7 @@ def package(repo, *, release=False, distribution='adhoc', identity=None, notary_
         (output / 'acceptance.json').write_text(json.dumps(approved, ensure_ascii=False, indent=2) + '\n')
     install = (repo / 'docs/分发安装说明.txt').read_text()
     if release:
-        install = install.replace('当前 0.4.1 为测试候选，尚未通过完整发布验收。', '本包已通过当前支持范围的发布验收，分发方式见发布回执。')
+        install = install.replace('当前 0.4.2 为测试候选，尚未通过完整发布验收。', '本包已通过当前支持范围的发布验收，分发方式见发布回执。')
         install = install.replace('本候选目前仍需验收模式进行未核验账号的首次切换，不适合作为已完成验收的正式版转交用户日常使用。计划对外发布前还要完成另一台 Mac 的安装和功能验证。', '首次使用新账号需按说明完成账号能力核验；不能据此推定未经测试的 Codex 版本兼容。')
     if notarize:
         install = install.replace('本包采用本地 ad-hoc 签名，未使用 Apple Developer ID，也未经过 Apple 公证。无需注册开发者账号即可安装，但首次打开可能被系统拦截。', '本包已使用 Developer ID 签名并通过 Apple 公证。首次打开仍需确认下载来源。')

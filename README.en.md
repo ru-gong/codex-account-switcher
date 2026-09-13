@@ -4,7 +4,7 @@ English · [简体中文](README.md)
 
 A native macOS menu bar utility for saving multiple Codex accounts, checking usage, and switching accounts after Codex has quit.
 
-**Current version: 0.4.1 candidate.** The GitHub tag `v0.4.1-rc.1` is a pre-release, not a claim of completed real-world acceptance. The application UI is currently in Simplified Chinese.
+**Current version: 0.4.2 candidate.** The GitHub tag `v0.4.2-rc.1` is a pre-release, not a claim of completed real-world acceptance. The application UI is currently in Simplified Chinese.
 
 ![Actual SwiftUI menu rendered with synthetic accounts and usage](docs/images/menu-preview.png)
 
@@ -20,7 +20,7 @@ A native macOS menu bar utility for saving multiple Codex accounts, checking usa
 
 Download these files from [Releases](https://github.com/ru-gong/codex-account-switcher/releases):
 
-- `CodexAccountSwitcher-0.4.1-macOS-arm64.zip`: runnable App and bilingual installation instructions.
+- `CodexAccountSwitcher-0.4.2-macOS-arm64.zip`: runnable App and bilingual installation instructions.
 - `SHA256SUMS`: artifact integrity checksum.
 
 Place both files in the same directory and run `shasum -a 256 -c SHA256SUMS`. Extract the ZIP, move `CodexAccountSwitcher.app` to Applications, and open it. The app lives in the menu bar and has no Dock window.
@@ -35,11 +35,13 @@ Quit the previous switcher before replacing it during an upgrade. The account li
 | --- | --- |
 | OS / architecture | macOS 14+; downloadable build is Apple Silicon / arm64 only |
 | Codex location | `/Applications/Codex.app` |
-| Pinned Codex version | `26.903.61454 (8378)` / `26.903.71938 (8576)`, bundled backend `0.153.4` |
+| Pinned Codex version | `26.908.40834 (8881)` / backend `0.154.0-alpha.6.2`; also `26.903.61454 (8378)` and `26.903.71938 (8576)` / backend `0.153.4` |
 | Authentication | Default `~/.codex` directory with file credential storage |
 | Unsupported | Other versions, managed authentication, non-default profiles, keyring / auto / ephemeral storage, or overridden authentication gateways |
 
-The switcher checks the Codex version and vendor signature before writing. Usage queries depend on a pinned internal, unstable protocol; Codex upgrades may require new compatibility work.
+The switcher checks the Codex version and vendor signature before writing. Usage queries depend on a pinned internal, unstable protocol; Codex upgrades may require new compatibility work. An unknown version shows a persistent compatibility notice and pauses queries and switching.
+
+“额度数据待更新” means the cached result is older than 15 minutes, not that the allowance is exhausted or the login expired. Invalid logins have a separate sign-in message. An explicit backend denial of included usage is displayed without inferring recovery from percentages.
 
 ## Usage
 
@@ -70,7 +72,7 @@ Removing the App retains the account library by default. Remove saved non-curren
 
 ## Validation and limitations
 
-78 Swift tests passed in both Debug and Release configurations, covering transactions, concurrency, recovery, and noninteractive Keychain behavior. Additional checks cover subprocess crashes, synthetic Keychain items, and packaging requirements.
+84 Swift tests passed in both Debug and Release configurations, covering transactions, concurrency, recovery, and noninteractive Keychain behavior. Additional checks cover subprocess crashes, synthetic Keychain items, and packaging requirements.
 
 These checks do not establish full real-account acceptance. Menu interaction, repeated switching, functional restore, a 48-hour observation, and installation on another Mac are not all complete. Computer History continuity remains unverified; uninterrupted History across every account or version is not promised. See [Acceptance status](docs/ACCEPTANCE.md).
 
@@ -88,7 +90,7 @@ python3 scripts/test_release_gate.py
 zsh scripts/package.sh
 ```
 
-Outputs are written to `dist/0.4.1/`; existing version directories are never overwritten. For synthetic-only demonstration, run `open -n dist/0.4.1/CodexAccountSwitcher.app --args --demo`.
+Outputs are written to `dist/0.4.2/`; existing version directories are never overwritten. For synthetic-only demonstration, run `open -n dist/0.4.2/CodexAccountSwitcher.app --args --demo`.
 
 Packaging remaps build paths, removes debug symbols, and audits artifacts. Follow [Releasing](docs/RELEASING.md) before publishing. Never upload private evidence, account files, backups, or local development history.
 

@@ -4,8 +4,8 @@ import Security
 
 public struct Writer: Identifiable { public var id: Int32; public var name: String }
 public struct HostConfiguration {
-    public static let testedVersion = "26.903.71938 (8576)"
-    public static let testedVersions: Set<String> = ["26.903.61454 (8378)", testedVersion]
+    public static let testedVersion = "26.908.40834 (8881)"
+    public static let testedVersions: Set<String> = ["26.903.61454 (8378)", "26.903.71938 (8576)", testedVersion]
     public var appURL = URL(fileURLWithPath: "/Applications/Codex.app")
     public var home: URL
     public init(home: URL = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".codex")) { self.home = home.standardizedFileURL.resolvingSymlinksInPath() }
@@ -35,7 +35,7 @@ public struct HostConfiguration {
         let config = home.appendingPathComponent("config.toml")
         // Conservative extraction: do not infer file mode from a stale auth.json or attempt a TOML rewrite.
         let text = FileManager.default.fileExists(atPath: config.path) ? try String(contentsOf: config, encoding: .utf8) : ""
-        // The inspected 0.153.4 backend and official schema define omitted storage as file.
+        // Supported backends use file storage by default; recheck this with each backend upgrade.
         // Explicit keyring/auto, managed configuration and ambiguous syntax still fail closed.
         guard Self.explicitFileBackend(text, defaultIsFile: true) else { throw SwitcherError.unsupportedBackend }
     }

@@ -24,7 +24,7 @@ public final class AppServer {
         do {
             try process.run(); started = true
             try workspace.childStarted(process.processIdentifier)
-            _ = try request("initialize", params: ["clientInfo": ["name": "codex_account_switcher", "version": "0.4.1"], "capabilities": ["experimentalApi": true]])
+            _ = try request("initialize", params: ["clientInfo": ["name": "codex_account_switcher", "version": "0.4.2"], "capabilities": ["experimentalApi": true]])
             try send(["method": "initialized", "params": [:]])
         } catch { close(); throw error }
     }
