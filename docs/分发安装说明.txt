@@ -1,8 +1,8 @@
-Codex 账号切换台 0.4.2 / Codex Account Switcher 0.4.2
+Codex 账号切换台 0.4.4 / Codex Account Switcher 0.4.4
 
 此为预发布候选，完整实机验收尚未完成。This is a pre-release candidate; full real-world acceptance is incomplete.
 
-支持 macOS 14+、Apple Silicon，Codex 26.908.40834 (8881)，内置后端 0.154.0-alpha.6.2；同时支持先前的 26.903.61454 (8378) / 26.903.71938 (8576)。
+支持 macOS 14+、Apple Silicon，Codex 26.911.61220 (9647)，内置后端 0.155.0-alpha.2.6；同时支持 26.908.70816 (9275)、26.908.40834 (8881)、26.903.71938 (8576)、26.903.61454 (8378)。
 Supports macOS 14+, Apple Silicon, and the pinned Codex version above.
 
 中文安装步骤

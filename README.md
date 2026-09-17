@@ -4,7 +4,7 @@
 
 一个原生 macOS 菜单栏工具，用于保存多个 Codex 账号、查看额度，并在退出 Codex 后切换账号。
 
-**当前版本：0.4.2 候选版。** GitHub 中的 `v0.4.2-rc.1` 为预发布，不代表完整实机验收完成。应用界面目前为简体中文。
+**当前版本：0.4.4 候选版。** GitHub 中的 `v0.4.4-rc.1` 为预发布，不代表完整实机验收完成。应用界面目前为简体中文。
 
 ![使用假账号和假额度渲染的菜单栏界面](docs/images/menu-preview.png)
 
@@ -20,7 +20,7 @@
 
 从本仓库 [Releases](https://github.com/ru-gong/codex-account-switcher/releases) 下载：
 
-- `CodexAccountSwitcher-0.4.2-macOS-arm64.zip`：可运行的 App 及中英文安装说明。
+- `CodexAccountSwitcher-0.4.4-macOS-arm64.zip`：可运行的 App 及中英文安装说明。
 - `SHA256SUMS`：文件完整性校验。
 
 把两者下载到同一目录，可执行 `shasum -a 256 -c SHA256SUMS` 校验。解压 ZIP，将 `CodexAccountSwitcher.app` 拖到“应用程序”，然后打开；图标显示在菜单栏，不显示 Dock 窗口。
@@ -35,7 +35,7 @@
 | --- | --- |
 | 系统与架构 | macOS 14+，当前成品仅 Apple Silicon / arm64 |
 | Codex 安装位置 | `/Applications/Codex.app` |
-| 已适配 Codex | `26.908.40834 (8881)`（后端 `0.154.0-alpha.6.2`）；保留 `26.903.61454 (8378)` / `26.903.71938 (8576)`（后端 `0.153.4`） |
+| 已适配 Codex | `26.911.61220 (9647)`（后端 `0.155.0-alpha.2.6`）；保留 `26.908.70816 (9275)`、`26.908.40834 (8881)`、`26.903.71938 (8576)`、`26.903.61454 (8378)` |
 | 认证存储 | 默认 `~/.codex`，file 后端 |
 | 不支持 | 其他版本、受管认证、非默认 profile、keyring / auto / ephemeral 后端或认证网关覆盖 |
 
@@ -90,7 +90,7 @@ python3 scripts/test_release_gate.py
 zsh scripts/package.sh
 ```
 
-产物位于 `dist/0.4.2/`，同版本目录已存在时拒绝覆盖。`open -n dist/0.4.2/CodexAccountSwitcher.app --args --demo` 使用临时假账号库演示，不连接真实账号。
+产物位于 `dist/0.4.4/`，同版本目录已存在时拒绝覆盖。`open -n dist/0.4.4/CodexAccountSwitcher.app --args --demo` 使用临时假账号库演示，不连接真实账号。
 
 打包会重映射构建路径、去除调试符号并扫描成品。发布前请执行 [发布与隐私检查流程](docs/RELEASING.md)，不要上传自己的 `evidence/`、账号文件、备份或本机开发历史。
 

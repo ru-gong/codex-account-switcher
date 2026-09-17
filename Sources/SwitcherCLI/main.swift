@@ -12,7 +12,8 @@ do {
         let engine = try Engine(root: root, authURL: host.home.appendingPathComponent("auth.json"), secrets: KeychainStore(), writersStopped: { try host.requireStopped() }, environmentAllowed: { try host.validate() })
         let before = try engine.mainCredential()
         if args.first == "prepare-live" {
-            try engine.importCurrent(alias: "A · 当前工作账号")
+            let alias = args.count > 1 ? args[1] : "当前账号"
+            try engine.importCurrent(alias: alias)
             guard try engine.credentialForProbe(before.identity.key).fingerprint == before.fingerprint else { throw SwitcherError.conflict }
             guard try engine.mainCredential().fingerprint == before.fingerprint else { throw SwitcherError.conflict }
             print("PASS: current account imported to Keychain; main auth unchanged; no switch performed")

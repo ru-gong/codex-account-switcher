@@ -4,7 +4,7 @@ English · [简体中文](README.md)
 
 A native macOS menu bar utility for saving multiple Codex accounts, checking usage, and switching accounts after Codex has quit.
 
-**Current version: 0.4.2 candidate.** The GitHub tag `v0.4.2-rc.1` is a pre-release, not a claim of completed real-world acceptance. The application UI is currently in Simplified Chinese.
+**Current version: 0.4.4 candidate.** The GitHub tag `v0.4.4-rc.1` is a pre-release, not a claim of completed real-world acceptance. The application UI is currently in Simplified Chinese.
 
 ![Actual SwiftUI menu rendered with synthetic accounts and usage](docs/images/menu-preview.png)
 
@@ -20,7 +20,7 @@ A native macOS menu bar utility for saving multiple Codex accounts, checking usa
 
 Download these files from [Releases](https://github.com/ru-gong/codex-account-switcher/releases):
 
-- `CodexAccountSwitcher-0.4.2-macOS-arm64.zip`: runnable App and bilingual installation instructions.
+- `CodexAccountSwitcher-0.4.4-macOS-arm64.zip`: runnable App and bilingual installation instructions.
 - `SHA256SUMS`: artifact integrity checksum.
 
 Place both files in the same directory and run `shasum -a 256 -c SHA256SUMS`. Extract the ZIP, move `CodexAccountSwitcher.app` to Applications, and open it. The app lives in the menu bar and has no Dock window.
@@ -35,7 +35,7 @@ Quit the previous switcher before replacing it during an upgrade. The account li
 | --- | --- |
 | OS / architecture | macOS 14+; downloadable build is Apple Silicon / arm64 only |
 | Codex location | `/Applications/Codex.app` |
-| Pinned Codex version | `26.908.40834 (8881)` / backend `0.154.0-alpha.6.2`; also `26.903.61454 (8378)` and `26.903.71938 (8576)` / backend `0.153.4` |
+| Pinned Codex version | `26.911.61220 (9647)` / backend `0.155.0-alpha.2.6`; also `26.908.70816 (9275)`, `26.908.40834 (8881)`, `26.903.71938 (8576)`, and `26.903.61454 (8378)` |
 | Authentication | Default `~/.codex` directory with file credential storage |
 | Unsupported | Other versions, managed authentication, non-default profiles, keyring / auto / ephemeral storage, or overridden authentication gateways |
 
@@ -90,7 +90,7 @@ python3 scripts/test_release_gate.py
 zsh scripts/package.sh
 ```
 
-Outputs are written to `dist/0.4.2/`; existing version directories are never overwritten. For synthetic-only demonstration, run `open -n dist/0.4.2/CodexAccountSwitcher.app --args --demo`.
+Outputs are written to `dist/0.4.4/`; existing version directories are never overwritten. For synthetic-only demonstration, run `open -n dist/0.4.4/CodexAccountSwitcher.app --args --demo`.
 
 Packaging remaps build paths, removes debug symbols, and audits artifacts. Follow [Releasing](docs/RELEASING.md) before publishing. Never upload private evidence, account files, backups, or local development history.
 

@@ -46,6 +46,22 @@
       "omitted_auth_storage": "file",
       "isolated_account_read": "null",
       "verification_scope": "Signature, schemas, isolated backend initialization and effective default auth storage; full real-account continuity acceptance remains incomplete."
+    },
+    {
+      "app_version": "26.908.70816 (9275)",
+      "cli_version": "0.154.0-alpha.6.2",
+      "verification_date": "2026-09-16",
+      "all_four_schemas_byte_identical": true,
+      "vendor_team_id": "2DC432GLL2",
+      "scope": "Compatibility evidence retained from the local 0.4.3 build; not independently published."
+    },
+    {
+      "app_version": "26.911.61220 (9647)",
+      "cli_version": "0.155.0-alpha.2.6",
+      "verification_date": "2026-09-17",
+      "all_four_schemas_byte_identical": true,
+      "vendor_team_id": "2DC432GLL2",
+      "scope": "Candidate compatibility validation: signature, generated schemas and isolated backend initialization. Full real-account switch acceptance remains incomplete."
     }
   ],
   "initial_baseline": {

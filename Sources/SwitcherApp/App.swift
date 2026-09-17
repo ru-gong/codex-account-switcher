@@ -39,7 +39,7 @@ import AppKit
         guard compatibilityError == .unsupportedVersion else { return nil }
         return "Codex \(host.version) 未通过兼容检查，额度查询与切换已暂停。请更新切换台。"
     }
-    var releaseLabel: String { Bundle.main.object(forInfoDictionaryKey: "SwitcherReleaseChannel") as? String == "release" ? "0.4.2" : "0.4.2 候选" }
+    var releaseLabel: String { Bundle.main.object(forInfoDictionaryKey: "SwitcherReleaseChannel") as? String == "release" ? "0.4.4" : "0.4.4 候选" }
 
     init() {
         demo = CommandLine.arguments.contains("--demo")

@@ -4,8 +4,8 @@ import Security
 
 public struct Writer: Identifiable { public var id: Int32; public var name: String }
 public struct HostConfiguration {
-    public static let testedVersion = "26.908.40834 (8881)"
-    public static let testedVersions: Set<String> = ["26.903.61454 (8378)", "26.903.71938 (8576)", testedVersion]
+    public static let testedVersion = "26.911.61220 (9647)"
+    public static let testedVersions: Set<String> = ["26.903.61454 (8378)", "26.903.71938 (8576)", "26.908.40834 (8881)", "26.908.70816 (9275)", testedVersion]
     public var appURL = URL(fileURLWithPath: "/Applications/Codex.app")
     public var home: URL
     public init(home: URL = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".codex")) { self.home = home.standardizedFileURL.resolvingSymlinksInPath() }
