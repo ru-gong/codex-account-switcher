@@ -1,8 +1,8 @@
 {
   "source": "/Applications/Codex.app/Contents/Resources/codex",
-  "cli_version": "0.154.0-alpha.6.2",
-  "app_version": "26.908.40834 (8881)",
-  "verification_date": "2026-09-14",
+  "cli_version": "0.155.0-alpha.9",
+  "app_version": "26.915.31029 (9771)",
+  "verification_date": "2026-09-18",
   "files": {
     "GetAccountRateLimitsResponse.json": "76bc91758269a89f57cd16c618b91c1fba76aca3e9d2b6186205e6f107d6b28c",
     "LoginAccountResponse.json": "72e6d77f49bc5809c3af50f183e2a0862dd8f7836816d4796ff69bb13eae0e89",
@@ -62,6 +62,34 @@
       "all_four_schemas_byte_identical": true,
       "vendor_team_id": "2DC432GLL2",
       "scope": "Candidate compatibility validation: signature, generated schemas and isolated backend initialization. Full real-account switch acceptance remains incomplete."
+    },
+    {
+      "app_version": "26.915.31029 (9771)",
+      "cli_version": "0.155.0-alpha.9",
+      "verification_date": "2026-09-18",
+      "all_four_schemas_byte_identical": true,
+      "vendor_team_id": "2DC432GLL2",
+      "scope": "Local adaptive-compatibility candidate: forward versions require the pinned vendor signature, minimum parseable version and operation-level isolated protocol checks. Full real-account switch acceptance remains incomplete."
+    },
+    {
+      "app_version": "26.1021.31345 (21828)",
+      "cli_version": "0.164.0-alpha.11.1",
+      "verification_date": "2026-10-25",
+      "source": "/Applications/Codex.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex",
+      "vendor_team_id": "2DC432GLL2",
+      "compatible_changes": [
+        "Resolve the nested CodexCLI.app Mach-O backend before the legacy Contents/Resources/codex executable",
+        "Validate the desktop and actual backend vendor signatures separately",
+        "When a quota response includes accountId, require it to match the requested account workspace"
+      ],
+      "live_quota_probe": {
+        "authentication": "Current-account access token only in an isolated official backend",
+        "primary_remaining_and_reset_present": true,
+        "secondary_window_returned": false,
+        "main_auth_unchanged": true
+      },
+      "schema_evidence": "No new schema hashes are asserted in this entry. The top-level files map remains the earlier recorded schema snapshot.",
+      "scope": "Local-only 0.4.6-local.1 candidate. Backend layout and identity checks do not establish completed switching acceptance across two Google-login accounts and one Apple-login account. No GitHub push or Release update in this iteration."
     }
   ],
   "initial_baseline": {

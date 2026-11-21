@@ -21,9 +21,9 @@ public final class Engine {
         if !FileManager.default.fileExists(atPath: ledgerURL.path) { return Ledger() }
         guard let value = try? JSONDecoder().decode(Ledger.self, from: SecureIO.read(ledgerURL)), value.schema == 1 else { throw SwitcherError.io }; return value
     }
-    private func save(_ ledger: Ledger) throws {
+    private func save(_ ledger: Ledger, preCommit: (() throws -> Void)? = nil) throws {
         let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys, .prettyPrinted]
-        try SecureIO.write(try encoder.encode(ledger), to: ledgerURL, preCommit: { try self.fault?("ledgerBeforeRename") }, afterRename: { try self.fault?("ledgerAfterRename") })
+        try SecureIO.write(try encoder.encode(ledger), to: ledgerURL, preCommit: { try self.fault?("ledgerBeforeRename"); try preCommit?() }, afterRename: { try self.fault?("ledgerAfterRename") })
         // Never delete a new immutable secret on an uncertain metadata commit.
     }
     public func snapshot() throws -> Ledger { try lock.withLock { try readLedger() } }
@@ -35,11 +35,65 @@ public final class Engine {
         let c = try Credential(data: secrets.get(account.secret))
         guard c.identity == account.identity, c.fingerprint == account.fingerprint else { throw SwitcherError.identityMismatch }; return c
     }
+    private func requireUnchangedGeneration(_ account: Account) throws {
+        let l = try readLedger(), saved = l.accounts[try accountIndex(account.id, in: l)]
+        guard saved.identity == account.identity, saved.generation == account.generation,
+              saved.fingerprint == account.fingerprint else { throw SwitcherError.conflict }
+    }
+    private func saveEmailIfNeeded(_ value: Credential, at index: Int, ledger: inout Ledger) throws {
+        let account = ledger.accounts[index]
+        guard value.identity == account.identity, value.fingerprint == account.fingerprint else { throw SwitcherError.identityMismatch }
+        guard account.email != value.email else { return }
+        ledger.accounts[index].email = value.email
+        try save(ledger, preCommit: { try self.requireUnchangedGeneration(account) })
+    }
     public func credentialForProbe(_ key: String) throws -> Credential {
-        try lock.withLock { let l = try readLedger(); return try credential(l.accounts[accountIndex(key, in: l)]) }
+        try lock.withLock {
+            var l = try readLedger()
+            let i = try accountIndex(key, in: l), value = try credential(l.accounts[i])
+            try saveEmailIfNeeded(value, at: i, ledger: &l)
+            return value
+        }
+    }
+    /// Keep a known current account in step with a refresh performed by Codex itself.
+    /// The caller's snapshot must still be current; unrelated saved accounts remain independent.
+    /// This never adds an unknown desktop identity, writes desktop auth, or permits Keychain UI.
+    public func credentialForQuota(_ account: Account) throws -> Credential {
+        try lock.withLock {
+            var l = try readLedger()
+            let i = try accountIndex(account.id, in: l)
+            let saved = l.accounts[i]
+            guard saved.generation == account.generation, saved.fingerprint == account.fingerprint else { throw SwitcherError.conflict }
+            let disk = try mainCredential()
+            guard disk.identity.key == account.id else {
+                let value = try credential(saved)
+                try saveEmailIfNeeded(value, at: i, ledger: &l)
+                return value
+            }
+            guard l.transaction == nil else { throw SwitcherError.pendingRecovery }
+            if disk.fingerprint != l.accounts[i].fingerprint {
+                // A known older disk generation or a separately reauthorized vault is a fork,
+                // not evidence that this account should be silently downgraded or refreshed.
+                guard !l.accounts[i].knownFingerprints.contains(disk.fingerprint) else { throw SwitcherError.conflict }
+            }
+            if disk.fingerprint != l.accounts[i].fingerprint || l.accounts[i].mainBaseline != disk.fingerprint || l.accounts[i].email != disk.email {
+                try reconcile(disk, ledger: &l)
+                l.accounts[i].email = disk.email
+                try save(l, preCommit: {
+                    try self.requireUnchangedGeneration(saved)
+                    guard try self.mainCredential().fingerprint == disk.fingerprint else { throw SwitcherError.conflict }
+                })
+            }
+            guard l.accounts[i].fingerprint == disk.fingerprint,
+                  try mainCredential().fingerprint == disk.fingerprint else { throw SwitcherError.conflict }
+            // The current file already matches the saved identity and canonical fingerprint.
+            // Do not require another Keychain read merely to query the running account.
+            return disk
+        }
     }
     private func put(_ value: Credential, into ledger: inout Ledger, alias: String? = nil) throws {
         if let i = ledger.accounts.firstIndex(where: { $0.id == value.identity.key }) {
+            ledger.accounts[i].email = value.email
             if ledger.accounts[i].fingerprint == value.fingerprint { return }
             let ref = try secrets.put(value.data)
             ledger.accounts[i].secretHistory.append(ref)
@@ -48,17 +102,20 @@ public final class Engine {
             ledger.accounts[i].fingerprint = value.fingerprint
             ledger.accounts[i].generation += 1
             ledger.accounts[i].plan = value.plan
+            ledger.accounts[i].quota = nil
+            ledger.accounts[i].quotaError = nil
+            ledger.accounts[i].quotaRetryAfter = nil
         } else {
             let ref = try secrets.put(value.data)
             let mask: String
             if let at = value.email.firstIndex(of: "@") { mask = String(value.email.prefix(2)) + "***" + value.email[at...] } else { mask = "未提供邮箱" }
-            ledger.accounts.append(Account(identity: value.identity, alias: String((alias ?? "账号 \(ledger.accounts.count + 1)").prefix(40)), maskedEmail: mask, plan: value.plan, secret: ref, generation: 1, fingerprint: value.fingerprint, knownFingerprints: [value.fingerprint], secretHistory: [ref], mainBaseline: nil, continuityVerifiedVersion: nil, quota: nil, quotaError: nil))
+            ledger.accounts.append(Account(identity: value.identity, alias: String((alias ?? "账号 \(ledger.accounts.count + 1)").prefix(40)), maskedEmail: mask, plan: value.plan, secret: ref, generation: 1, fingerprint: value.fingerprint, knownFingerprints: [value.fingerprint], secretHistory: [ref], mainBaseline: nil, continuityVerifiedVersion: nil, quota: nil, quotaError: nil, email: value.email))
         }
     }
     /// A disk credential can advance the vault only when the vault still equals the last observed disk baseline.
     private func reconcile(_ disk: Credential, ledger: inout Ledger) throws {
         let i = try accountIndex(disk.identity.key, in: ledger), a = ledger.accounts[i]
-        if disk.fingerprint == a.fingerprint { ledger.accounts[i].mainBaseline = disk.fingerprint; return }
+        if disk.fingerprint == a.fingerprint { ledger.accounts[i].mainBaseline = disk.fingerprint; ledger.accounts[i].email = disk.email; return }
         if a.knownFingerprints.contains(disk.fingerprint) {
             // Disk has an older generation. Keep the newer vault secret (Q01).
             ledger.accounts[i].mainBaseline = disk.fingerprint; return
@@ -76,6 +133,25 @@ public final class Engine {
             else { try put(c, into: &l, alias: alias); l.accounts[try accountIndex(c.identity.key, in: l)].mainBaseline = c.fingerprint }
             guard try mainCredential().fingerprint == c.fingerprint else { throw SwitcherError.conflict }
             l.lastEvent = "已导入当前账号"; try save(l)
+        }
+    }
+    /// Explicitly save the current credential only after the caller validates it with the official backend.
+    /// Unlike background reconciliation, this can resolve an unknown fork while retaining every prior secret.
+    public func saveValidatedCurrent(_ value: Credential, expectedGeneration: Int) throws {
+        try lock.withLock {
+            try environmentAllowed()
+            var l = try readLedger(); guard l.transaction == nil else { throw SwitcherError.pendingRecovery }
+            let i = try accountIndex(value.identity.key, in: l), saved = l.accounts[i]
+            guard saved.identity == value.identity else { throw SwitcherError.identityMismatch }
+            guard saved.generation == expectedGeneration,
+                  try mainCredential().fingerprint == value.fingerprint else { throw SwitcherError.conflict }
+            guard value.fingerprint == saved.fingerprint || !saved.knownFingerprints.contains(value.fingerprint) else { throw SwitcherError.conflict }
+            try put(value, into: &l)
+            l.accounts[i].mainBaseline = value.fingerprint
+            l.lastEvent = "已验证并保存当前账号凭据"
+            try save(l, preCommit: {
+                guard try self.mainCredential().fingerprint == value.fingerprint else { throw SwitcherError.conflict }
+            })
         }
     }
     /// Only official isolated login should call this in the app. CAS spans the entire asynchronous login.
@@ -146,14 +222,15 @@ public final class Engine {
             guard try self.mainCredential().fingerprint == expected else { throw SwitcherError.conflict }
         }, afterRename: { try self.fault?("authAfterRename") })
     }
-    public func switchAccount(_ key: String, policy: SwitchPolicy, cancellation: Cancellation? = nil, validateTarget: (Credential) throws -> Void) throws {
+    public func switchAccount(_ key: String, policy: SwitchPolicy, cancellation: Cancellation? = nil, expectedSourceKey: String? = nil, validateTarget: (Credential) throws -> Void) throws {
         try lock.withLock {
             try environmentAllowed(); try writersStopped()
             var l = try readLedger(); guard l.transaction == nil else { throw SwitcherError.pendingRecovery }
             let disk = try mainCredential()
+            if let expectedSourceKey, disk.identity.key != expectedSourceKey { throw SwitcherError.conflict }
             guard disk.identity.key != key else { return } // defer always releases flock (N01).
             let i = try accountIndex(key, in: l)
-            guard policy.allowCapabilityTrial || l.accounts[i].continuityVerifiedVersion == policy.version else { throw SwitcherError.capabilityUnknown }
+            guard policy.accepts(l.accounts[i].continuityVerifiedVersion) else { throw SwitcherError.capabilityUnknown }
             let target = try credential(l.accounts[i]); try validateTarget(target)
             if cancellation?.isCancelled == true { throw SwitcherError.cancelled }
             try reconcile(disk, ledger: &l)
@@ -246,7 +323,7 @@ public final class Engine {
             let accounts: [[String: Any]] = l.accounts.enumerated().map { n, a in
                 ["ordinal": n + 1, "generation": a.generation, "hasQuota": a.quota != nil, "quotaStale": a.quota?.isStale ?? true, "continuityChecked": a.continuityVerifiedVersion != nil]
             }
-            return try canonical(["schema": 1, "appVersion": "0.4.4", "accountCount": accounts.count, "accounts": accounts, "transactionPhase": l.transaction?.phase.rawValue ?? "none"])
+            return try canonical(["schema": 1, "appVersion": "0.4.6", "accountCount": accounts.count, "accounts": accounts, "transactionPhase": l.transaction?.phase.rawValue ?? "none"])
         }
     }
 }

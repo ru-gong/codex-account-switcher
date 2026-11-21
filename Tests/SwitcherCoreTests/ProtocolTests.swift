@@ -33,12 +33,14 @@ for line in sys.stdin:
   assert obj['params']['type']=='chatgptAuthTokens'
   assert 'refresh_token' not in line and 'SYNTHETIC_REFRESH' not in line
   send({'id':obj['id'],'result':{'type':'chatgptAuthTokens'}})
+ elif method=='account/read':
+  send({'id':obj['id'],'result':{'account':({'type':'chatgpt'} if mode=='not-isolated' else None)}})
  elif method=='account/rateLimits/read':
   if mode=='refresh': send({'id':900,'method':'account/chatgptAuthTokens/refresh','params':{'reason':'unauthorized'}})
   elif mode=='malformed': print('not json',flush=True)
   elif mode=='slow': time.sleep(10)
   elif mode=='429': send({'id':obj['id'],'error':{'code':-1,'data':{'httpStatusCode':429},'message':'rate limited'}})
-  else: send({'id':obj['id'],'result':{'rateLimitsByLimitId':{'codex':{'primary':{'usedPercent':25,'windowDurationMins':300,'resetsAt':1800000000},'secondary':None}}}})
+  else: send({'id':obj['id'],'result':{'accountId':('wrong-workspace' if mode=='wrong-account' else None),'rateLimitsByLimitId':{'codex':{'primary':{'usedPercent':25,'windowDurationMins':300,'resetsAt':1800000000},'secondary':None}}}})
 """#.replacingOccurrences(of: "MODE", with: "'" + mode + "'").replacingOccurrences(of: "FAKE_AUTH", with: try Demo.credential("B").data.base64EncodedString())
         try SecureIO.write(Data(script.utf8), to: url)
         try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: url.path)
@@ -53,6 +55,16 @@ for line in sys.stdin:
         let credential = try AppServer.login(binary: mock("login"), cancellation: Cancellation()) { opened = $0 }
         XCTAssertEqual(opened?.host, "auth.openai.com")
         XCTAssertEqual(credential.identity.key, try Demo.credential("B").identity.key)
+    }
+    func testMismatchedQuotaAccountNeverDisplayed() throws {
+        XCTAssertThrowsError(try AppServer.quota(binary: mock("wrong-account"), credential: Demo.credential("A"), cancellation: Cancellation())) {
+            XCTAssertEqual($0 as? SwitcherError, .identityMismatch)
+        }
+    }
+    func testNonemptyIsolatedBackendRejectedBeforeTokenLogin() throws {
+        XCTAssertThrowsError(try AppServer.quota(binary: mock("not-isolated"), credential: Demo.credential("A"), cancellation: Cancellation())) {
+            XCTAssertEqual($0 as? SwitcherError, .identityMismatch)
+        }
     }
     func testServerRefreshRequestIsRefused() throws {
         XCTAssertThrowsError(try AppServer.quota(binary: mock("refresh"), credential: Demo.credential("A"), cancellation: Cancellation())) { XCTAssertEqual($0 as? SwitcherError, .expired) }

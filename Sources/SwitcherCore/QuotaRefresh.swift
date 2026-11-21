@@ -33,7 +33,7 @@ public struct QuotaRefreshSchedule {
                 // Explicit approval resolves only a Keychain failure, never a server rate limit.
                 guard trigger == .authorized(account.id), account.quotaError == SwitcherError.keychainAuthorizationRequired.rawValue else { return false }
             }
-            if trigger == .automatic, let quota = account.quota,
+            if trigger == .automatic, account.email != nil, let quota = account.quota,
                !quota.stale, account.quotaError == nil,
                (0..<900).contains(now.timeIntervalSince(quota.fetchedAt)) { return false }
             return true
@@ -62,25 +62,30 @@ public enum QuotaRefresh {
         if cancellation.isCancelled { throw SwitcherError.cancelled }
         try validateEnvironment()
         var report = QuotaRefreshReport()
+        var staleSnapshot = false
         for account in accounts {
             if cancellation.isCancelled { throw SwitcherError.cancelled }
             let quota: Quota
+            var fingerprint = account.fingerprint
             do {
-                let credential = try engine.credentialForProbe(account.id)
-                guard credential.fingerprint == account.fingerprint else { throw SwitcherError.conflict }
+                let credential = try engine.credentialForQuota(account)
+                fingerprint = credential.fingerprint
                 quota = try fetch(credential, cancellation)
             } catch {
                 if cancellation.isCancelled || error as? SwitcherError == .cancelled { throw SwitcherError.cancelled }
                 let failure = error as? SwitcherError ?? .unknownQuota
-                try engine.updateQuota(account.id, fingerprint: account.fingerprint, quota: nil, error: failure)
+                do { try engine.updateQuota(account.id, fingerprint: fingerprint, quota: nil, error: failure) }
+                catch SwitcherError.conflict { staleSnapshot = true }
                 if failure == .keychainAuthorizationRequired { report.needsAuthorization += 1 }
                 else { report.failed += 1 }
                 continue
             }
             if cancellation.isCancelled { throw SwitcherError.cancelled }
-            try engine.updateQuota(account.id, fingerprint: account.fingerprint, quota: quota, error: nil)
+            do { try engine.updateQuota(account.id, fingerprint: fingerprint, quota: quota, error: nil) }
+            catch SwitcherError.conflict { staleSnapshot = true; report.failed += 1; continue }
             report.updated += 1
         }
+        if staleSnapshot { throw SwitcherError.conflict }
         return report
     }
 
@@ -90,6 +95,7 @@ public enum QuotaRefresh {
             switch SwitcherError(rawValue: error) {
             case .keychainAuthorizationRequired: return "待授权 · 点击授权后更新"
             case .expired, .unauthorized, .invalidAuth: return "登录已过期 · 请重新登录"
+            case .conflict: return "保存的登录与当前状态不同 · 请核对"
             case .rateLimited: return "请求受限 · 稍后重试"
             case .offline: return "网络不可用 · 已保留旧值"
             default: return "查询失败 · 已保留上次结果"

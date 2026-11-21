@@ -20,6 +20,8 @@ import AppKit
     }
     @Published var authorizationAccount: String?
     @Published var compatibilityError: SwitcherError?
+    @Published var switchAttempt: SwitchAttempt?
+    @Published var confirmingSwitch = false
     private let credentialStore = KeychainStore()
     private var sessionObservers: [NSObjectProtocol] = []
     private var quotaTimer: Timer?
@@ -36,10 +38,10 @@ import AppKit
     var selected: Account? { ledger.accounts.first { $0.id == selection } }
     var currentAlias: String { ledger.accounts.first { $0.id == current }?.alias ?? "未导入" }
     var compatibilityNotice: String? {
-        guard compatibilityError == .unsupportedVersion else { return nil }
-        return "Codex \(host.version) 未通过兼容检查，额度查询与切换已暂停。请更新切换台。"
+        guard let error = compatibilityError else { return nil }
+        return error.localizedDescription
     }
-    var releaseLabel: String { Bundle.main.object(forInfoDictionaryKey: "SwitcherReleaseChannel") as? String == "release" ? "0.4.4" : "0.4.4 候选" }
+    var releaseLabel: String { Bundle.main.object(forInfoDictionaryKey: "SwitcherReleaseChannel") as? String == "release" ? "0.4.6" : "0.4.6 候选" }
 
     init() {
         demo = CommandLine.arguments.contains("--demo")
@@ -69,7 +71,10 @@ import AppKit
             }
             refresh()
             let timer = Timer(timeInterval: 30, repeats: true) { [weak self] _ in
-                Task { @MainActor in self?.autoRefresh() }
+                Task { @MainActor in
+                    guard let self, !self.busy else { return }
+                    self.refresh(); self.autoRefresh()
+                }
             }
             quotaTimer = timer
             RunLoop.main.add(timer, forMode: .common)
@@ -83,6 +88,7 @@ import AppKit
             refreshCompatibility()
             let previousIdentity = current, previousTransaction = ledger.transaction?.id
             ledger = try engine.snapshot(); current = try? engine.mainCredential().identity.key
+            if !demo { switchAttempt = try? SwitchCoordinator(root: engine.root).latestAttempt() }
             if previousIdentity != current || previousTransaction != ledger.transaction?.id { desktopConfirmed = false; continuityConfirmed = false }
             if selection == nil { selection = current ?? ledger.accounts.first?.id }
             writers = demo ? [] : (try host.writers())
@@ -91,8 +97,10 @@ import AppKit
     private func refreshCompatibility() {
         guard !demo else { return }
         let version = host.version
-        if observedHostVersion != version { compatibilityError = nil; observedHostVersion = version }
-        if !HostConfiguration.testedVersions.contains(version) { compatibilityError = .unsupportedVersion }
+        guard observedHostVersion != version else { return }
+        observedHostVersion = version
+        // Signature/protocol checks run on the worker, never while opening the menu.
+        compatibilityError = nil
     }
     func perform(_ label: String, successMessage: String? = nil, completion: ((Error?) -> Void)? = nil, _ operation: @escaping (Engine, Cancellation) throws -> Void) {
         guard !busy, let engine else { return }
@@ -104,7 +112,7 @@ import AppKit
                 self.busy = false; self.refresh()
                 self.message = error.map { self.safe($0) } ?? successMessage ?? self.ledger.lastEvent
                 if error as? SwitcherError == .keychainAuthorizationRequired { self.authorizationAccount = self.selection ?? self.current }
-                if error as? SwitcherError == .unsupportedVersion { self.compatibilityError = .unsupportedVersion }
+                if let e = error as? SwitcherError, [.unsupportedVersion, .unsupportedBackend].contains(e) { self.compatibilityError = e }
                 completion?(error)
             }
         }
@@ -124,27 +132,43 @@ import AppKit
             _ = try store.withUserAuthorization { try engine.credentialForProbe(account.id) }
         }
     }
-    func importCurrent() { perform("读取当前凭据…") { engine, _ in try engine.importCurrent() } }
+    func importCurrent() {
+        let store = credentialStore, host = self.host, demo = self.demo
+        perform("保存当前账号…", completion: { error in
+            if error == nil { self.refreshQuota(trigger: .manual) }
+        }) { engine, token in
+            let disk = try engine.mainCredential()
+            if !demo, let account = try engine.snapshot().accounts.first(where: { $0.id == disk.identity.key }) {
+                try host.validate()
+                let quota = try AppServer.quota(binary: host.binary, credential: disk, cancellation: token)
+                if token.isCancelled { throw SwitcherError.cancelled }
+                try store.withUserAuthorization { try engine.saveValidatedCurrent(disk, expectedGeneration: account.generation) }
+                try engine.updateQuota(account.id, fingerprint: disk.fingerprint, quota: quota, error: nil)
+            } else {
+                try store.withUserAuthorization { try engine.importCurrent() }
+            }
+        }
+    }
     func login(existing: Account? = nil) {
         if demo { message = "演示模式不发起真实登录。"; return }
         if ledger.transaction != nil { message = SwitcherError.pendingRecovery.localizedDescription; return }
         if let existing, existing.id == current && !writers.isEmpty { message = SwitcherError.writersRunning.localizedDescription; return }
-        let host = self.host
-        perform("正在等待官方浏览器登录；可随时取消…") { engine, token in
-            try host.validateVersion()
+        let host = self.host, store = credentialStore
+        perform("请在官方页面选择 Google 或 Apple 登录；完成后返回这里。", completion: { error in
+            if error == nil { self.refreshQuota(trigger: .manual) }
+        }) { engine, token in
+            try host.validate()
             let credential = try AppServer.login(binary: host.binary, cancellation: token) { url in DispatchQueue.main.async { NSWorkspace.shared.open(url) } }
             if token.isCancelled { throw SwitcherError.cancelled }
-            try engine.importAuthorized(credential, expectedKey: existing?.id, expectedGeneration: existing?.generation)
+            try store.withUserAuthorization {
+                try engine.importAuthorized(credential, expectedKey: existing?.id, expectedGeneration: existing?.generation)
+            }
         }
     }
     func refreshQuota(trigger: QuotaRefreshTrigger = .manual) {
-        guard !busy else { return }
+        guard !busy, !confirmingSwitch else { return }
         if demo { message = "演示额度已就绪（模拟数据）。"; return }
         refreshCompatibility()
-        guard HostConfiguration.testedVersions.contains(host.version) else {
-            if trigger != .automatic { message = compatibilityNotice ?? SwitcherError.unsupportedVersion.localizedDescription }
-            return
-        }
         guard let engine else { return }
         let accounts: [Account]
         do { accounts = try engine.snapshot().accounts } catch { message = safe(error); return }
@@ -163,34 +187,76 @@ import AppKit
                 if trigger == .manual && due.count < accounts.count { self.message += "；其余账号等待重试时间" }
             }
         }) { engine, token in
-            report = try QuotaRefresh.run(engine: engine, accounts: due, cancellation: token, validateEnvironment: { try host.validateVersion() }) { credential, token in
+            report = try QuotaRefresh.run(engine: engine, accounts: due, cancellation: token, validateEnvironment: { try host.validate() }) { credential, token in
                 try AppServer.quota(binary: host.binary, credential: credential, cancellation: token)
             }
         }
     }
     func switchToSelected() {
+        guard !busy else { message = "正在处理上一项操作，请完成后再次切换。"; return }
         guard let selected else { return }
-        let host = self.host, demo = self.demo, trial = self.trial
+        let host = self.host, demo = self.demo
         desktopConfirmed = false; continuityConfirmed = false
         perform("检查环境及目标账号…") { engine, token in
-            try engine.switchAccount(selected.id, policy: SwitchPolicy(version: host.version, allowCapabilityTrial: demo || trial), cancellation: token) { credential in
+            var checkedFingerprint: String?
+            var sourceKey: String?
+            try SwitchCoordinator(root: engine.root).run(cancellation: token, validateTarget: {
+                if !demo { try host.validate() }
+                let ledger = try engine.snapshot()
+                guard ledger.transaction == nil else { throw SwitcherError.pendingRecovery }
+                let current = try engine.mainCredential()
+                guard current.identity.key != selected.id else { throw SwitcherError.identityMismatch }
+                guard ledger.accounts.contains(where: { $0.id == current.identity.key }) else { throw SwitcherError.missingAccount }
+                sourceKey = current.identity.key
+                let credential = try engine.credentialForProbe(selected.id)
                 if !demo { _ = try AppServer.quota(binary: host.binary, credential: credential, cancellation: token) }
-            }
-            if try engine.snapshot().transaction != nil {
+                checkedFingerprint = credential.fingerprint
+            }, requestQuit: {
+                if !demo {
+                    var refused = false
+                    DispatchQueue.main.sync {
+                        if token.isCancelled { refused = true; return }
+                        for app in NSRunningApplication.runningApplications(withBundleIdentifier: "com.openai.codex") {
+                            if app.bundleURL?.standardizedFileURL == host.appURL.standardizedFileURL, !app.terminate() { refused = true }
+                        }
+                    }
+                    if refused { throw token.isCancelled ? SwitcherError.cancelled : SwitcherError.writersRunning }
+                }
+            }, waitForStopped: {
+                if !demo {
+                    let deadline = Date().addingTimeInterval(25)
+                    while !(try host.writers()).isEmpty {
+                        if token.isCancelled { throw SwitcherError.cancelled }
+                        if Date() >= deadline { throw SwitcherError.writersRunning }
+                        Thread.sleep(forTimeInterval: 0.2)
+                    }
+                }
+            }, commit: {
+                guard try engine.mainCredential().identity.key == sourceKey else { throw SwitcherError.conflict }
+                try engine.switchAccount(selected.id, policy: SwitchPolicy(version: host.version, allowCapabilityTrial: true), cancellation: token, expectedSourceKey: sourceKey) { credential in
+                    guard credential.fingerprint == checkedFingerprint else { throw SwitcherError.conflict }
+                    guard let expiry = credential.expiresAt, expiry > Date().addingTimeInterval(60) else { throw SwitcherError.expired }
+                }
+                return try engine.snapshot().transaction != nil
+            }, launch: {
                 if !demo {
                     try engine.prepareLaunch(cancellation: token)
                     let semaphore = DispatchSemaphore(value: 0)
                     var launchError: Error?
                     DispatchQueue.main.async {
-                        // The request may have been cancelled while this main-queue block was waiting.
                         guard !token.isCancelled else { launchError = SwitcherError.cancelled; semaphore.signal(); return }
                         NSWorkspace.shared.openApplication(at: host.appURL, configuration: NSWorkspace.OpenConfiguration()) { _, error in launchError = error; semaphore.signal() }
                     }
-                    guard semaphore.wait(timeout: .now() + 25) == .success else { throw SwitcherError.timeout }
+                    guard semaphore.wait(timeout: .now() + 25) == .success else {
+                        // Invalidate a queued main-thread launch before reporting failure.
+                        // An already submitted launch remains ambiguous and keeps its journal.
+                        token.cancel(); throw SwitcherError.timeout
+                    }
                     if let launchError { throw (launchError as? SwitcherError) ?? SwitcherError.io }
                 }
-                try engine.noteLaunched()
-            }
+            }, noteLaunched: { try engine.noteLaunched() }, progress: { attempt in
+                DispatchQueue.main.async { self.switchAttempt = attempt; self.message = attempt.stage.label }
+            })
         }
     }
     func confirm() {
@@ -236,6 +302,7 @@ struct MainView: View {
     @State private var deleteAccount: Account?
     @State private var renameAccount: Account?
     @State private var renameText = ""
+    @State private var switchAccount: Account?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -275,7 +342,7 @@ struct MainView: View {
                         }.padding(12).background(.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
                     }
                     if !model.demo && !model.writers.isEmpty {
-                        Text("切换前请退出 Codex 及共享登录的 CLI / IDE。切换完成后会自动打开 Codex。")
+                        Text("点击切换后会先检查账号，再正常退出并重开 Codex。共享登录的 CLI / IDE 需要先退出。")
                             .font(.caption).foregroundStyle(.secondary)
                     }
                     DisclosureGroup("更多设置", isExpanded: $advanced) { advancedSettings.padding(.top, 10) }
@@ -292,6 +359,16 @@ struct MainView: View {
         .frame(width: 390, height: advanced ? 670 : 510)
         .background(Color(nsColor: .windowBackgroundColor))
         .onAppear { if !model.busy { model.refresh(); model.autoRefresh() } }
+        .alert("退出 Codex 并切换账号？", isPresented: Binding(get: { switchAccount != nil }, set: { if !$0 { switchAccount = nil; model.confirmingSwitch = false } })) {
+            Button("取消", role: .cancel) { switchAccount = nil; model.confirmingSwitch = false }
+            Button("退出并切换") {
+                model.confirmingSwitch = false
+                if let account = switchAccount { model.selection = account.id; model.switchToSelected() }
+                switchAccount = nil
+            }
+        } message: {
+            Text("请先保存正在进行的工作。目标账号：\(switchAccount?.alias ?? "")。账号检查通过后将正常退出并重开 Codex；不会强制结束进程。")
+        }
         .alert("删除保存的账号？", isPresented: Binding(get: { deleteAccount != nil }, set: { if !$0 { deleteAccount = nil } })) {
             Button("取消", role: .cancel) { deleteAccount = nil }
             Button("删除", role: .destructive) {
@@ -318,13 +395,14 @@ struct MainView: View {
                         Text(account.alias).font(.callout.weight(.semibold)).lineLimit(1)
                         if isCurrent { Text(model.ledger.transaction == nil ? "当前" : "待确认").font(.caption2).foregroundStyle(.teal) }
                     }
-                    Text(account.maskedEmail).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+                    Text(account.displayEmail).font(.caption2).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
                 }
                 Spacer(minLength: 4)
                 if !isCurrent {
-                    Button("切换") { model.selection = account.id; model.switchToSelected() }
+                    Button("切换") { model.confirmingSwitch = true; switchAccount = account }
                         .buttonStyle(.bordered).controlSize(.small)
-                        .disabled(model.busy || model.ledger.transaction != nil || model.compatibilityNotice != nil)
+                        .disabled(model.busy || model.ledger.transaction != nil)
                 }
                 Menu {
                     Button("修改名称…") { renameAccount = account; renameText = account.alias }
@@ -349,8 +427,16 @@ struct MainView: View {
                     Spacer(minLength: 0)
                     if account.quotaError == SwitcherError.keychainAuthorizationRequired.rawValue {
                         Button("授权") { model.authorizeSelected(account.id) }.controlSize(.small).disabled(model.busy)
+                    } else if ["expired", "unauthorized", "invalidAuth"].contains(account.quotaError ?? "") {
+                        Button("重新登录") { model.login(existing: account) }.controlSize(.small).disabled(model.busy)
+                    } else if account.quotaError == "conflict" && isCurrent {
+                        Button("同步当前登录") { model.importCurrent() }.controlSize(.small).disabled(model.busy)
                     }
                 }
+            }
+            if let quota = account.quota {
+                resetRow(quota.primary, name: "短期额度", stale: quota.isStale)
+                resetRow(quota.secondary, name: "长期额度", stale: quota.isStale)
             }
             if let fetched = account.quota?.fetchedAt {
                 HStack(spacing: 3) {
@@ -367,6 +453,22 @@ struct MainView: View {
         guard let q = account.quota else { return account.quotaError == "keychainAuthorizationRequired" ? "待授权" : "额度待查询" }
         let values = [q.primary, q.secondary].compactMap { $0 }.map { "\(duration($0.windowDurationMins)) \(Int($0.remaining))%" }
         return (q.isStale ? "旧值 · " : "剩余 · ") + values.joined(separator: " / ")
+    }
+
+    @ViewBuilder private func resetRow(_ window: QuotaWindow?, name: String, stale: Bool) -> some View {
+        if let window {
+            HStack(spacing: 4) {
+                Text("\(duration(window.windowDurationMins))重置")
+                Spacer()
+                if let date = window.resetsAt {
+                    if date > Date() {
+                        Text(date, format: .dateTime.month().day().hour().minute())
+                        Text("（"); Text(date, style: .relative); Text("后）")
+                    } else { Text("已到期 · 待刷新") }
+                } else { Text("服务未返回时间") }
+            }.font(.caption2).foregroundStyle(.secondary)
+                .help(stale ? "缓存记录，刷新后以最新结果为准" : "\(name)由服务端提供的重置时间")
+        }
     }
 
     private func duration(_ minutes: Int) -> String {
@@ -397,6 +499,12 @@ struct MainView: View {
             HStack {
                 Button("检查状态") { model.refresh() }.disabled(model.busy)
                 Button("保存当前账号") { model.importCurrent() }.disabled(model.busy || model.ledger.transaction != nil)
+            }
+            if let attempt = model.switchAttempt, model.ledger.transaction != nil || [.failed, .cancelled, .running].contains(attempt.outcome) {
+                Text("上次切换：\(attempt.stage.label)").font(.caption).foregroundStyle(.secondary)
+                if let code = attempt.errorCode, let error = SwitcherError(rawValue: code) {
+                    Text(error.localizedDescription).font(.caption).foregroundStyle(.orange)
+                }
             }
             if model.ledger.transaction != nil {
                 Button("退出 Codex 后回退") { model.recover() }.disabled(model.busy)

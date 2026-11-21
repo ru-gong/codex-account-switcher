@@ -25,7 +25,7 @@ public enum SwitcherError: String, Error, LocalizedError {
         case .timeout: return "Codex 后端响应超时。"
         case .protocolError: return "Codex 后端协议不兼容或响应异常。"
         case .loginFailed: return "登录未完成，请重试。"
-        case .expired: return "访问令牌已过期，请重新授权此账号。"
+        case .expired: return "此账号保存的登录已过期，请点“重新登录”续期；钥匙串授权不能延长登录有效期。"
         case .unknownQuota: return "额度暂时无法确认；已保留上次结果。"
         case .unauthorized: return "授权无效，请重新登录。"
         case .forbidden: return "此账号或工作区没有所需权限。"
@@ -115,7 +115,13 @@ public struct Quota: Codable, Equatable {
             guard used.isFinite, used >= 0, used <= 100,
                   let duration = o["windowDurationMins"] as? NSNumber, CFGetTypeID(duration) != CFBooleanGetTypeID(),
                   let mins = Int(exactly: duration.doubleValue), mins > 0 else { throw SwitcherError.unknownQuota }
-            return QuotaWindow(usedPercent: used, windowDurationMins: mins, resetsAt: (o["resetsAt"] as? NSNumber).map { Date(timeIntervalSince1970: $0.doubleValue) })
+            let reset: Date?
+            if let raw = o["resetsAt"], !(raw is NSNull) {
+                guard let number = raw as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID(),
+                      number.doubleValue.isFinite, number.doubleValue >= 0 else { throw SwitcherError.unknownQuota }
+                reset = Date(timeIntervalSince1970: number.doubleValue)
+            } else { reset = nil }
+            return QuotaWindow(usedPercent: used, windowDurationMins: mins, resetsAt: reset)
         }
         let permission: Bool?
         if let raw = result["ordinaryUsageAllowed"], !(raw is NSNull) {
@@ -145,6 +151,8 @@ public struct Account: Codable, Identifiable {
     public var quotaError: String?
     public var quotaRetryAfter: Date?
     public var continuityUnavailableVersion: String?
+    public var email: String? = nil
+    public var displayEmail: String { email ?? "完整邮箱待读取" }
 }
 
 public enum Phase: String, Codable {
@@ -176,5 +184,13 @@ public struct Ledger: Codable {
 public struct SwitchPolicy {
     public var version: String
     public var allowCapabilityTrial: Bool
-    public init(version: String, allowCapabilityTrial: Bool = false) { self.version = version; self.allowCapabilityTrial = allowCapabilityTrial }
+    public var allowPriorContinuity: Bool
+    public init(version: String, allowCapabilityTrial: Bool = false, allowPriorContinuity: Bool = false) {
+        self.version = version
+        self.allowCapabilityTrial = allowCapabilityTrial
+        self.allowPriorContinuity = allowPriorContinuity
+    }
+    public func accepts(_ verifiedVersion: String?) -> Bool {
+        allowCapabilityTrial || verifiedVersion == version || (allowPriorContinuity && verifiedVersion != nil)
+    }
 }

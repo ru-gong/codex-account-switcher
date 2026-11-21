@@ -135,6 +135,20 @@ final class CoreTests: XCTestCase {
         expect(.capabilityUnknown) { try engine.switchAccount(key("B"), policy: SwitchPolicy(version: "live"), validateTarget: { _ in XCTFail("Must not probe") }) }
         XCTAssertNil(try engine.snapshot().transaction)
     }
+    func testPriorContinuityCanBeReusedOnlyWhenPolicyAllowsIt() throws {
+        try switchTo("B"); try confirm("B"); try switchTo("A"); try confirm("A")
+        expect(.capabilityUnknown) { try engine.switchAccount(key("B"), policy: SwitchPolicy(version: "future"), validateTarget: { _ in XCTFail("Must not probe") }) }
+        var probed = false
+        try engine.switchAccount(key("B"), policy: SwitchPolicy(version: "future", allowPriorContinuity: true), validateTarget: { _ in probed = true })
+        XCTAssertTrue(probed); XCTAssertEqual(try engine.mainCredential().identity.key, try key("B"))
+    }
+    func testForwardVersionEligibilityRejectsMalformedAndDowngradedBuilds() {
+        XCTAssertTrue(HostConfiguration.isVersionEligible("26.915.31029 (9771)"))
+        XCTAssertTrue(HostConfiguration.isVersionEligible("27.1.0 (1)"))
+        XCTAssertFalse(HostConfiguration.isVersionEligible("26.903.61454 (8377)"))
+        XCTAssertFalse(HostConfiguration.isVersionEligible("unknown"))
+        XCTAssertFalse(HostConfiguration.isVersionEligible("26.915 (9771)"))
+    }
     func testWritersBlockAndDoNotQueue() throws {
         let e = try Engine(root: engine.root, authURL: engine.authURL, secrets: TestSecretStore(root: root.appendingPathComponent("fake-secrets")), writersStopped: { throw SwitcherError.writersRunning }, environmentAllowed: {})
         expect(.writersRunning) { try e.switchAccount(key("B"), policy: SwitchPolicy(version: "demo", allowCapabilityTrial: true), validateTarget: { _ in }) }
@@ -188,6 +202,16 @@ final class CoreTests: XCTestCase {
     func testQuotaWindowsAndMultiBucketPrecedence() throws {
         let q = try Quota.parse(["rateLimitsByLimitId": ["codex": ["primary": ["usedPercent": 25, "windowDurationMins": 300], "secondary": ["usedPercent": 100, "windowDurationMins": 10080]]], "rateLimits": ["primary": ["usedPercent": 99, "windowDurationMins": 1]]])
         XCTAssertEqual(q.primary?.remaining, 75); XCTAssertEqual(q.secondary?.remaining, 0); XCTAssertEqual(q.secondary?.windowDurationMins, 10080)
+    }
+    func testQuotaResetTimeUsesUnixSecondsAndPreservesMissingValue() throws {
+        let q = try Quota.parse(["rateLimits": ["primary": ["usedPercent": 25, "windowDurationMins": 300, "resetsAt": 1_800_000_000], "secondary": ["usedPercent": 60, "windowDurationMins": 10080, "resetsAt": NSNull()]]])
+        XCTAssertEqual(q.primary?.resetsAt, Date(timeIntervalSince1970: 1_800_000_000))
+        XCTAssertNil(q.secondary?.resetsAt)
+    }
+    func testQuotaRejectsMalformedResetInsteadOfInventingTime() {
+        for reset: Any in [true, "tomorrow", -1, Double.infinity, Double.nan] {
+            expect(.unknownQuota) { _ = try Quota.parse(["rateLimits": ["primary": ["usedPercent": 25, "windowDurationMins": 300, "resetsAt": reset]]]) }
+        }
     }
     func testUnknownQuotaRetainsStaleCache() throws {
         for obj: [String: Any] in [[:], ["rateLimits": NSNull()], ["rateLimits": ["primary": ["usedPercent": -1, "windowDurationMins": 1]]], ["rateLimits": ["primary": ["usedPercent": 101, "windowDurationMins": 1]]]] { expect(.unknownQuota) { _ = try Quota.parse(obj) } }

@@ -11,20 +11,21 @@ public final class AppServer {
     private var buffer = Data(), sequence = 0
     private var notifications: [[String: Any]] = []
     private var started = false
-    public init(binary: URL, cancellation: Cancellation = Cancellation()) throws {
+    public init(binary: URL, cancellation: Cancellation = Cancellation(), forceFileStorage: Bool = true) throws {
         self.cancel = cancellation
         workspace = try LoginWorkspace()
         home = workspace.url
         process.executableURL = binary
-        process.arguments = ["app-server", "--stdio", "-c", "cli_auth_credentials_store=\"file\"", "-c", "analytics.enabled=false"]
+        process.arguments = ["app-server", "--stdio", "-c", "analytics.enabled=false"]
+        if forceFileStorage { process.arguments! += ["-c", "cli_auth_credentials_store=\"file\""] }
         process.currentDirectoryURL = home
         // Intentionally no inherited API keys, endpoint overrides, hooks or MCP configuration.
-        process.environment = ["HOME": FileManager.default.homeDirectoryForCurrentUser.path, "PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "LANG": "en_US.UTF-8", "CODEX_HOME": home.path, "TMPDIR": home.path]
+        process.environment = ["HOME": home.path, "PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "LANG": "en_US.UTF-8", "CODEX_HOME": home.path, "TMPDIR": home.path]
         process.standardInput = input; process.standardOutput = output; process.standardError = FileHandle.nullDevice
         do {
             try process.run(); started = true
             try workspace.childStarted(process.processIdentifier)
-            _ = try request("initialize", params: ["clientInfo": ["name": "codex_account_switcher", "version": "0.4.4"], "capabilities": ["experimentalApi": true]])
+            _ = try request("initialize", params: ["clientInfo": ["name": "codex_account_switcher", "version": "0.4.6"], "capabilities": ["experimentalApi": true]])
             try send(["method": "initialized", "params": [:]])
         } catch { close(); throw error }
     }
@@ -128,7 +129,15 @@ public final class AppServer {
         let server = try AppServer(binary: binary, cancellation: cancellation); defer { server.close() }
         var params: [String: Any] = ["type": "chatgptAuthTokens", "accessToken": credential.accessToken, "chatgptAccountId": credential.identity.workspace]
         if let plan = credential.plan { params["chatgptPlanType"] = plan }
-        _ = try server.request("account/login/start", params: params)
-        return try Quota.parse(server.request("account/rateLimits/read"))
+        let empty = try server.request("account/read", params: ["refreshToken": false])
+        guard empty["account"] is NSNull else { throw SwitcherError.identityMismatch }
+        let login = try server.request("account/login/start", params: params)
+        guard login["type"] as? String == "chatgptAuthTokens" else { throw SwitcherError.protocolError }
+        let result = try server.request("account/rateLimits/read")
+        // New backends label quota with its account. Never display another account's result.
+        if let account = result["accountId"], !(account is NSNull) {
+            guard account as? String == credential.identity.workspace else { throw SwitcherError.identityMismatch }
+        }
+        return try Quota.parse(result)
     }
 }
